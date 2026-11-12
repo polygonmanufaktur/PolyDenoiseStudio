@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="icon_source.png" alt="PolyDenoise Studio Logo" width="100%"/>
+  <img src="logo.png" alt="PolyDenoise Studio Logo" width="256"/>
   <h1>PolyDenoise Studio</h1>
   <p><strong>High-Performance Direct RAM/VRAM AI Batch Denoiser, SOTA HDR Downscaler & OpenEXR v3.5.3 Pipeline</strong></p>
   <p>
@@ -8,9 +8,11 @@
     <a href="#-sota-downscaling--smart-data-pass-protection">Downscaling & AOV Protection</a> •
     <a href="#-openexr-v353-codec-engine">OpenEXR v3.5.3</a> •
     <a href="#-quick-start-python--bundled-dlls">Quick Start</a>
-  </p>
+  </p>  
 </div>
-
+<div align="center">
+  <img src="screenshot.png" alt="PolyDenoise Studio Interface" width="100%"/>
+</div>
 ---
 
 **PolyDenoise Studio** is a high-performance, hardware-accelerated Python desktop application built around **Intel® Open Image Denoise (OIDN v2.5+)** and **OpenEXR v3.5.3**. Engineered specifically for multi-channel 3D rendering and relighting workflows (Indigo Renderer, Cinema 4D, Blender, Maya, 3ds Max), it eliminates the disk I/O bottlenecks of traditional command-line wrappers and pairs neural denoising with mathematically rigorous post-downscaling.
