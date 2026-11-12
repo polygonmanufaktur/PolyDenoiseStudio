@@ -1,0 +1,8 @@
+oidn_config.json
+__pycache__/
+*.py[cod]
+*.pfm
+*.exr
+build/
+dist/
+*.spec
