@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="icon_source.png" alt="PolyDenoise Studio Logo" width="140"/>
+  <img src="icon_source.png" alt="PolyDenoise Studio Logo" width="100%"/>
   <h1>PolyDenoise Studio</h1>
   <p><strong>High-Performance Direct RAM/VRAM AI Batch Denoiser, SOTA HDR Downscaler & OpenEXR v3.5.3 Pipeline</strong></p>
   <p>
