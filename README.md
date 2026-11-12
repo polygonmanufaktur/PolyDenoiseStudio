@@ -8,16 +8,18 @@
     <a href="#-sota-downscaling--smart-data-pass-protection">Downscaling & AOV Protection</a> •
     <a href="#-openexr-v353-codec-engine">OpenEXR v3.5.3</a> •
     <a href="#-quick-start-python--bundled-dlls">Quick Start</a>
-  </p>  
+  </p>
 </div>
+
 <div align="center">
   <img src="screenshot.png" alt="PolyDenoise Studio Interface" width="100%"/>
 </div>
+
 ---
 
-**PolyDenoise Studio** is a high-performance, hardware-accelerated Python desktop application built around **Intel® Open Image Denoise (OIDN v2.5+)** and **OpenEXR v3.5.3**. Engineered specifically for multi-channel 3D rendering and relighting workflows (Indigo Renderer, Cinema 4D, Blender, Maya, 3ds Max), it eliminates the disk I/O bottlenecks of traditional command-line wrappers and pairs neural denoising with mathematically rigorous post-downscaling.
+**PolyDenoise Studio** is a high-performance, hardware-accelerated Python desktop application built around **Intel® Open Image Denoise (OIDN v2.5+)** and **OpenEXR v3.5.3**. Originally engineered for in-house architectural visualization and CGI production pipelines at [**Polygon Manufaktur**](https://www.polygonmanufaktur.de/?utm_source=github_polydenoise) (supporting Indigo Renderer, Cinema 4D, Blender, Maya, and 3ds Max), it eliminates the disk I/O bottlenecks of traditional command-line wrappers and pairs neural denoising with mathematically rigorous post-downscaling.
 
-> 💡 **Companion Tool:** Pair your denoised and downscaled light layers directly with [**PolyLightMix**](https://www.polygonmanufaktur.de/polylightmix/) for interactive real-time WebGL relighting, Kelvin color temperature grading, Z-Depth DoF, and ACES tonemapping.
+> 💡 **Companion Tool:** Pair your denoised and downscaled light layers directly with [**PolyLightMix**](https://github.com/polygonmanufaktur/PolyLightMix) for interactive real-time WebGL relighting, Kelvin color temperature grading, Z-Depth DoF, and ACES tonemapping.
 
 ---
 
@@ -31,6 +33,7 @@
 
 ### 2. Universal AOV & Multi-Pass Auto-Parser
 * **Exporter Agnostic:** Automatically parses and groups render passes regardless of naming convention (`<scene>_channels_<pass>.exr`, `<scene>_<pass>.exr`, `<scene>.<pass>.exr`, or `<scene>-<pass>.exr`).
+* **Instant First-Pass Preview & Background Scanner:** Displays the first lighting pass immediately upon selecting a folder while scanning remaining passes and pre-caching counterparts asynchronously in the background.
 * **Smart Channel Linking:** Detects `albedo`, `normals`, `normals_pre_bump`, `depth`, `position`, `alpha`, `material_id`, `object_id`, `material_mask`, `object_mask`, and arbitrary custom light names, pairing each light pass with its corresponding frame guides.
 * **Automatic Empty (100% Black) Pass Detection:** Scans light layers using a fast strided sensor, marks inactive lights with **`⚫ [Empty]`** in the UI, and automatically skips them during batch denoising (`0.0s` wasted GPU time, zero hallucinated ghost edges from guide passes).
 
@@ -92,8 +95,12 @@ Built on the latest **OpenEXR v3.5.3** C++ core with balanced multi-threaded **A
 
 ## 🛠️ Quick Start (Python + Bundled OIDN DLLs)
 
-**PolyDenoise Studio** automatically detects Intel OIDN binaries placed in the local `./oidn/` subfolder—zero manual configuration required.
+**PolyDenoise Studio** automatically detects the bundled Intel OIDN binaries in the `./oidn/` subfolder—zero manual configuration required.
 
-### 1. Install Python Dependencies (Python 3.10 – 3.14)
+### 1. Launch via Batch Starter (Auto-Installs Dependencies)
+Simply double-click **`start.bat`**. On first launch, it automatically installs `OpenEXR>=3.5.3`, `customtkinter`, `opencv-python`, `numpy`, and `Pillow` if missing, and starts the GUI.
+
+### 2. Or Run Manually via Terminal (Python 3.10 – 3.14)
 ```bash
 pip install -r requirements.txt
+python indigo_oidn_gui.py
