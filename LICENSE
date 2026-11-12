@@ -19,3 +19,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+------------------------------------------------------------------------------
+THIRD-PARTY BINARIES NOTICE (./oidn/ directory)
+
+The MIT License above applies solely to the PolyDenoise Studio application 
+source code and assets created by Arthur Liebnau / Polygon Manufaktur.
+
+The precompiled Intel(R) Open Image Denoise binaries and runtime libraries 
+bundled in the "./oidn/" subdirectory are governed by the Apache License, 
+Version 2.0 and their respective third-party licenses. See "./oidn/LICENSE.txt" 
+and "./oidn/third-party-programs*.txt" for full license terms and copyright notices.
