@@ -1,12 +1,12 @@
 <div align="center">
   <img src="logo.png" alt="PolyDenoise Studio Logo" width="256"/>
   <h1>PolyDenoise Studio</h1>
-  <p><strong>High-Performance Direct RAM/VRAM AI Batch Denoiser, SOTA HDR Downscaler & OpenEXR v3.5.3 Pipeline</strong></p>
+  <p><strong>High-Performance Direct RAM/VRAM AI Batch Denoiser, SOTA HDR Downscaler & OpenEXR v3.5.4 Pipeline</strong></p>
   <p>
     <a href="#-key-features">Key Features</a> •
     <a href="#-ready-for-oidn-v30-alpha">OIDN v3.0 Ready</a> •
     <a href="#-sota-downscaling--smart-data-pass-protection">Downscaling & AOV Protection</a> •
-    <a href="#-openexr-v353-codec-engine">OpenEXR v3.5.3</a> •
+    <a href="#-openexr-v353-codec-engine">OpenEXR v3.5.4</a> •
     <a href="#-quick-start-python--bundled-dlls">Quick Start</a> •
     <a href="#-credits--license">License</a>
   </p>
@@ -16,7 +16,7 @@
   <img src="screenshot.png" alt="PolyDenoise Studio Interface" width="100%"/>
 </div>
 
-**PolyDenoise Studio** is a high-performance, hardware-accelerated Python desktop application built around **Intel® Open Image Denoise (OIDN v2.5+)** and **OpenEXR v3.5.3**. Originally engineered for in-house architectural visualization and CGI production pipelines at [**Polygon Manufaktur**](https://www.polygonmanufaktur.de/?utm_source=github_polydenoise) (supporting Indigo Renderer, Cinema 4D, Blender, Maya, and 3ds Max), it eliminates the disk I/O bottlenecks of traditional command-line wrappers and pairs neural denoising with mathematically rigorous post-downscaling.
+**PolyDenoise Studio** is a high-performance, hardware-accelerated Python desktop application built around **Intel® Open Image Denoise (OIDN v2.5+)** and **OpenEXR v3.5.4**. Originally engineered for in-house architectural visualization and CGI production pipelines at [**Polygon Manufaktur**](https://www.polygonmanufaktur.de/?utm_source=github_polydenoise) (supporting Indigo Renderer, Cinema 4D, Blender, Maya, and 3ds Max), it eliminates the disk I/O bottlenecks of traditional command-line wrappers and pairs neural denoising with mathematically rigorous post-downscaling.
 
 > 💡 **Companion Tool:** Pair your denoised and downscaled light layers directly with [**PolyLightMix**](https://github.com/polygonmanufaktur/PolyLightMix) for interactive real-time WebGL relighting, Kelvin color temperature grading, Z-Depth DoF, and ACES tonemapping.
 
@@ -61,9 +61,9 @@ Standard sharpening filters destroy data passes by blending discrete IDs or intr
 * **`material_mask`, `object_mask` & `alpha`:** Scaled via overshoot-free **Mitchell-Netravali** and strictly clamped to $[0.0, 1.0]$.
 * **`depth`, `position` & `normals`:** Scaled via pure linear polyphase interpolation without Karis luma distortion, preserving full **32-bit Float (`FP32`)** precision on Z-Depth and World Position passes to prevent depth-stepping artifacts.
 
-## 📦 OpenEXR v3.5.3 Codec Engine & Dual-Compression Pipeline
+## 📦 OpenEXR v3.5.4 Codec Engine & Dual-Compression Pipeline
 
-Built on the latest **OpenEXR v3.5.3** C++ core with balanced multi-threaded **Async RAM Write-Behind Queues** (compressing EXRs in system RAM on background CPU threads while the GPU immediately denoises the next pass):
+Built on the latest **OpenEXR v3.5.4** C++ core with balanced multi-threaded **Async RAM Write-Behind Queues** (compressing EXRs in system RAM on background CPU threads while the GPU immediately denoises the next pass):
 
 * **Beauty & Light Layer Codecs:**
   * **`DWAB` / `DWAA` (Default Level `20`):** Fast, high-ratio lossy DCT compression for lighting passes (embedded Alpha channels remain lossless automatically).
@@ -86,12 +86,12 @@ Built on the latest **OpenEXR v3.5.3** C++ core with balanced multi-threaded **A
 **PolyDenoise Studio** automatically detects the bundled Intel OIDN binaries in the `./oidn/` subfolder—zero manual configuration required.
 
 ### 1. Launch via Batch Starter (Auto-Installs Dependencies)
-Simply double-click **`start.bat`**. On first launch, it automatically installs `OpenEXR>=3.5.3`, `customtkinter`, `opencv-python`, `numpy`, and `Pillow` if missing, and starts the GUI.
+Simply double-click **`start.bat`**. On first launch, it automatically installs `OpenEXR>=3.5.4`, `customtkinter`, `opencv-python`, `numpy`, and `Pillow` if missing, and starts the GUI.
 
 ### 2. Or Run Manually via Terminal (Python 3.10 – 3.14)
 ```bash
 pip install -r requirements.txt
-python indigo_oidn_gui.py
+python polydenoise_studio.py
 ```
 
 ## 📄 Credits & License

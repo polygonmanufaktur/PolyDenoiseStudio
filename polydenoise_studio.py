@@ -1,15 +1,14 @@
-import os
-import sys
-import json
-import re
-import time
-import ctypes
-import tempfile
-import threading
-import subprocess
-import webbrowser
-import urllib.request
-import urllib.error
+# SPDX-License-Identifier: MIT
+# PolyDenoise Studio — High-Performance Direct RAM/VRAM AI Batch Denoiser & HDR Downscaler
+# Copyright (c) 2026 Arthur Liebnau / Polygon Manufaktur (https://www.polygonmanufaktur.de)
+#
+# Third-Party Notices:
+# - Intel(R) Open Image Denoise (OIDN): Licensed under Apache License 2.0 (Copyright Intel Corp.)
+# - OpenEXR: Licensed under BSD-3-Clause License (Copyright Contributors to the OpenEXR Project)
+# - Magic Kernel Sharp algorithm: Mathematics by John Costella
+
+import os, sys, json, re, time, ctypes, tempfile, threading, subprocess, webbrowser
+import urllib.request, urllib.error
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -31,27 +30,20 @@ CONFIG_FILE = BASE_DIR / "oidn_config.json"
 
 
 def get_initial_oidn_path() -> Path:
-    """Prioritizes bundled ./oidn/ folder or local directory first, then oidn_config.json."""
-    local_candidates = [
-        BASE_DIR / "oidn" / "oidnDenoise.exe",
-        BASE_DIR / "oidn" / "OpenImageDenoise.dll",
-        BASE_DIR / "oidnDenoise.exe",
-        BASE_DIR / "OpenImageDenoise.dll",
-        BASE_DIR / "_internal" / "oidnDenoise.exe",
-        BASE_DIR / "_internal" / "OpenImageDenoise.dll"
-    ]
-    for c in local_candidates:
+    for c in [
+        BASE_DIR / "oidn" / "oidnDenoise.exe", BASE_DIR / "oidn" / "OpenImageDenoise.dll",
+        BASE_DIR / "oidnDenoise.exe", BASE_DIR / "OpenImageDenoise.dll",
+        BASE_DIR / "_internal" / "oidnDenoise.exe", BASE_DIR / "_internal" / "OpenImageDenoise.dll"
+    ]:
         if c.exists():
             return c
-
     if CONFIG_FILE.exists():
         try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            if "oidn_bin" in data and Path(data["oidn_bin"]).exists():
-                return Path(data["oidn_bin"])
+            p = Path(json.loads(CONFIG_FILE.read_text(encoding="utf-8")).get("oidn_bin", ""))
+            if p.exists():
+                return p
         except Exception:
             pass
-
     return BASE_DIR / "oidn" / "oidnDenoise.exe"
 
 
@@ -83,36 +75,26 @@ _SRGB_LUT_12BIT = (np.power(np.linspace(0.0, 1.0, _LUT_STEPS, dtype=np.float32),
 
 
 def create_minimal_icon(kind: str, size: int = 18, color: str = "#dcdcdc") -> ctk.CTkImage:
-    """Renders crisp 4x-supersampled minimalist monochrome vector icons for UI buttons."""
     scale = 4
     s = size * scale
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     lw = max(2, int(1.6 * scale))
-
     if kind == "stopwatch":
-        # Minimalist geometric stopwatch: top crown, subtle side tick, clean ring, angled hand
-        cx, cy = s // 2, int(s * 0.54)
-        r = int(s * 0.34)
+        cx, cy, r = s // 2, int(s * 0.54), int(s * 0.34)
         draw.line([(cx - int(s * 0.12), int(s * 0.10)), (cx + int(s * 0.12), int(s * 0.10))], fill=color, width=lw)
         draw.line([(cx, int(s * 0.10)), (cx, cy - r)], fill=color, width=lw)
         draw.line([(cx + int(r * 0.65), cy - int(r * 0.65)), (cx + int(r * 0.92), cy - int(r * 0.92))], fill=color, width=lw)
         draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=color, width=lw)
         draw.line([(cx, cy), (cx + int(r * 0.48), cy - int(r * 0.42))], fill=color, width=lw)
-        dot_r = max(2, lw // 2)
-        draw.ellipse((cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r), fill=color)
-
+        dr = max(2, lw // 2)
+        draw.ellipse((cx - dr, cy - dr, cx + dr, cy + dr), fill=color)
     elif kind == "sliders":
-        # Minimalist 3-line studio tuning sliders (cleaner than a jagged gear at 18px)
-        pad_x = int(s * 0.14)
-        y_positions = [int(s * 0.24), int(s * 0.50), int(s * 0.76)]
-        knob_x = [int(s * 0.64), int(s * 0.36), int(s * 0.58)]
-        kr = int(s * 0.09)
-        for y, kx in zip(y_positions, knob_x):
-            draw.line([(pad_x, y), (kx - kr - 2, y)], fill=color, width=lw)
-            draw.line([(kx + kr + 2, y), (s - pad_x, y)], fill=color, width=lw)
+        px, kr = int(s * 0.14), int(s * 0.09)
+        for y, kx in zip([int(s * 0.24), int(s * 0.50), int(s * 0.76)], [int(s * 0.64), int(s * 0.36), int(s * 0.58)]):
+            draw.line([(px, y), (kx - kr - 2, y)], fill=color, width=lw)
+            draw.line([(kx + kr + 2, y), (s - px, y)], fill=color, width=lw)
             draw.ellipse((kx - kr, y - kr, kx + kr, y + kr), outline=color, width=lw)
-
     smooth = img.resize((size, size), Image.Resampling.LANCZOS)
     return ctk.CTkImage(light_image=smooth, dark_image=smooth, size=(size, size))
 
@@ -121,8 +103,7 @@ def create_minimal_icon(kind: str, size: int = 18, color: str = "#dcdcdc") -> ct
 class CTkToolTip:
     def __init__(self, widget, text: str, delay: int = 320):
         self.widget, self.text, self.delay = widget, text, delay
-        self.tip_window = None
-        self.after_id = None
+        self.tip_window = self.after_id = None
         self.widget.bind("<Enter>", self._schedule, add="+")
         self.widget.bind("<Leave>", self._hide, add="+")
         self.widget.bind("<ButtonPress>", self._hide, add="+")
@@ -149,10 +130,7 @@ class CTkToolTip:
         tw.attributes("-topmost", True)
         frame = tk.Frame(tw, background="#1e1e1e", highlightbackground="#5a5a5a", highlightthickness=1, bd=0)
         frame.pack(fill="both", expand=True)
-        tk.Label(
-            frame, text=self.text, justify="left", background="#1e1e1e", foreground="#e8e8e8",
-            font=("Segoe UI", 9), wraplength=330, padx=8, pady=6
-        ).pack()
+        tk.Label(frame, text=self.text, justify="left", background="#1e1e1e", foreground="#e8e8e8", font=("Segoe UI", 9), wraplength=330, padx=8, pady=6).pack()
 
     def _hide(self, _=None):
         self._unschedule()
@@ -170,30 +148,21 @@ class ScrollableDropdown(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         self.variable, self.values, self.command = variable, list(values), command
         self.display_formatter, self.popup, self.btn_width = display_formatter, None, width
-
         self.prev_btn = ctk.CTkButton(self, text="◀", width=24, height=28, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.step(-1))
         self.prev_btn.pack(side="left", padx=(0, 2))
-
-        self.main_btn = ctk.CTkButton(
-            self, text=self._format_btn_text(self.variable.get()), width=width, height=28,
-            anchor="w", fg_color="#1f538d", hover_color="#14375e", command=self.toggle_popup
-        )
+        self.main_btn = ctk.CTkButton(self, text=self._format_btn_text(self.variable.get()), width=width, height=28, anchor="w", fg_color="#1f538d", hover_color="#14375e", command=self.toggle_popup)
         self.main_btn.pack(side="left", padx=0)
-
         self.next_btn = ctk.CTkButton(self, text="▶", width=24, height=28, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.step(1))
         self.next_btn.pack(side="left", padx=(2, 0))
-        self.variable.trace_add("write", self._on_var_write)
+        self.variable.trace_add("write", lambda *_: self.refresh_label())
 
     def _get_label(self, val: str) -> str:
         return self.display_formatter(val) if self.display_formatter else val
 
     def _format_btn_text(self, val: str) -> str:
         disp = self._get_label(val)
-        max_chars = max(10, int(self.btn_width / 7.2))
-        return (disp[: max_chars - 2] + "… ▾") if len(disp) > max_chars else f"{disp}  ▾"
-
-    def _on_var_write(self, *_):
-        self.main_btn.configure(text=self._format_btn_text(self.variable.get()))
+        mc = max(10, int(self.btn_width / 7.2))
+        return (disp[: mc - 2] + "… ▾") if len(disp) > mc else f"{disp}  ▾"
 
     def configure_values(self, new_values: list):
         self.values = list(new_values)
@@ -234,29 +203,21 @@ class ScrollableDropdown(ctk.CTkFrame):
         self.popup = pop = tk.Toplevel(self)
         pop.wm_overrideredirect(True)
         pop.attributes("-topmost", True)
-
         x, y = self.main_btn.winfo_rootx(), self.main_btn.winfo_rooty() + self.main_btn.winfo_height() + 2
-        pop_w = max(self.btn_width + 75, 300)
-        pop_h = min(max(len(self.values) * 22 + 45, 130), 380)
+        pop_w, pop_h = max(self.btn_width + 75, 300), min(max(len(self.values) * 22 + 45, 130), 380)
         pop.wm_geometry(f"{pop_w}x{pop_h}+{x}+{y}")
 
         outer = tk.Frame(pop, bg="#242424", highlightbackground="#3b8ed0", highlightthickness=1)
         outer.pack(fill="both", expand=True)
-
         search_var = tk.StringVar()
         search_entry = ctk.CTkEntry(outer, textvariable=search_var, placeholder_text="Search / Filter...", height=26)
         search_entry.pack(fill="x", padx=6, pady=(6, 4))
 
         list_frame = tk.Frame(outer, bg="#242424")
         list_frame.pack(fill="both", expand=True, padx=4, pady=(0, 4))
-
         scrollbar = ctk.CTkScrollbar(list_frame, orientation="vertical")
         scrollbar.pack(side="right", fill="y")
-
-        listbox = tk.Listbox(
-            list_frame, bg="#1e1e1e", fg="#e8e8e8", selectbackground="#1f6aa5", selectforeground="#ffffff",
-            font=("Consolas", 10), highlightthickness=0, bd=0, activestyle="none", yscrollcommand=scrollbar.set
-        )
+        listbox = tk.Listbox(list_frame, bg="#1e1e1e", fg="#e8e8e8", selectbackground="#1f6aa5", selectforeground="#ffffff", font=("Consolas", 10), highlightthickness=0, bd=0, activestyle="none", yscrollcommand=scrollbar.set)
         listbox.pack(side="left", fill="both", expand=True)
         scrollbar.configure(command=listbox.yview)
 
@@ -300,9 +261,7 @@ class ScrollableDropdown(ctk.CTkFrame):
 # ================= DIRECT RAM/VRAM OIDN C-API ENGINE =================
 class OIDNNativeDLL:
     DEVICE_MAP = {"default": 0, "cpu": 1, "sycl": 2, "cuda": 3, "hip": 4, "metal": 5}
-    FORMAT_FLOAT3 = 3
-    FORMAT_HALF3 = 259
-    STORAGE_DEVICE = 2
+    FORMAT_FLOAT3, FORMAT_HALF3, STORAGE_DEVICE = 3, 259, 2
     QUALITY_MAP = {"fast": 4, "balanced": 5, "high": 6}
 
     def __init__(self, dll_path: Path):
@@ -310,10 +269,8 @@ class OIDNNativeDLL:
         self.dll_path = dll_path
         self.lib = ctypes.CDLL(str(dll_path))
         self._bind_signatures()
-        self.device = None
-        self.current_device_key = None
+        self.device = self.current_device_key = self.buf_shape_key = None
         self.buf_cache = {}
-        self.buf_shape_key = None
         self.version_str = self._query_dll_version()
 
     def _bind_signatures(self):
@@ -326,8 +283,7 @@ class OIDNNativeDLL:
         self.lib.oidnGetDeviceError.argtypes, self.lib.oidnGetDeviceError.restype = [vp, ctypes.POINTER(cp)], ci
         self.lib.oidnNewBuffer.argtypes, self.lib.oidnNewBuffer.restype = [vp, cs], vp
         if hasattr(self.lib, "oidnNewBufferWithStorage"):
-            self.lib.oidnNewBufferWithStorage.argtypes = [vp, cs, ci]
-            self.lib.oidnNewBufferWithStorage.restype = vp
+            self.lib.oidnNewBufferWithStorage.argtypes, self.lib.oidnNewBufferWithStorage.restype = [vp, cs, ci], vp
         self.lib.oidnWriteBuffer.argtypes, self.lib.oidnWriteBuffer.restype = [vp, cs, cs, vp], None
         self.lib.oidnReadBuffer.argtypes, self.lib.oidnReadBuffer.restype = [vp, cs, cs, vp], None
         self.lib.oidnReleaseBuffer.argtypes, self.lib.oidnReleaseBuffer.restype = [vp], None
@@ -384,16 +340,14 @@ class OIDNNativeDLL:
         if self.device is not None and self.current_device_key == key:
             return
         self.shutdown()
-
         if device_str == "default":
-            for fallback_dev in ("cuda", "hip", "cpu"):
-                dev_try = self.lib.oidnNewDevice(self.DEVICE_MAP[fallback_dev])
+            for fb in ("cuda", "hip", "cpu"):
+                dev_try = self.lib.oidnNewDevice(self.DEVICE_MAP[fb])
                 if dev_try:
                     self.device = dev_try
                     break
         else:
             self.device = self.lib.oidnNewDevice(self.DEVICE_MAP.get(device_str, 1))
-
         if not self.device:
             raise RuntimeError(f"Failed to initialize OIDN device '{device_str}'.")
         self.lib.oidnSetDeviceInt(self.device, b"verbose", int(verbose))
@@ -407,11 +361,9 @@ class OIDNNativeDLL:
             return
         self.release_buffers()
         byte_size = int(h) * int(w) * 3 * (2 if use_half else 4)
-        has_storage_api = hasattr(self.lib, "oidnNewBufferWithStorage")
+        has_storage = hasattr(self.lib, "oidnNewBufferWithStorage")
         for name in ("color", "out", "albedo", "normal"):
-            buf = None
-            if has_storage_api:
-                buf = self.lib.oidnNewBufferWithStorage(self.device, byte_size, self.STORAGE_DEVICE)
+            buf = self.lib.oidnNewBufferWithStorage(self.device, byte_size, self.STORAGE_DEVICE) if has_storage else None
             if not buf:
                 buf = self.lib.oidnNewBuffer(self.device, byte_size)
             if not buf:
@@ -422,16 +374,13 @@ class OIDNNativeDLL:
 
     @staticmethod
     def _prep_array(arr: np.ndarray, use_half: bool) -> np.ndarray:
-        if use_half:
-            return np.ascontiguousarray(np.clip(arr, -65500.0, 65500.0), dtype=np.float16)
-        return np.ascontiguousarray(arr, dtype=np.float32)
+        return np.ascontiguousarray(np.clip(arr, -65500.0, 65500.0), dtype=np.float16) if use_half else np.ascontiguousarray(arr, dtype=np.float32)
 
     def upload_aux_to_vram(self, alb_rgb: np.ndarray, nrm_rgb: np.ndarray, use_half: bool):
         ref = alb_rgb if alb_rgb is not None else nrm_rgb
         if ref is None:
             return
-        h, w, _ = ref.shape
-        self.ensure_buffers(h, w, use_half)
+        self.ensure_buffers(ref.shape[0], ref.shape[1], use_half)
         if alb_rgb is not None:
             arr_a = self._prep_array(alb_rgb, use_half)
             self.lib.oidnWriteBuffer(self.buf_cache["albedo"], 0, arr_a.nbytes, arr_a.ctypes.data_as(ctypes.c_void_p))
@@ -447,9 +396,7 @@ class OIDNNativeDLL:
     ) -> np.ndarray:
         h, w, _ = color_rgb.shape
         self.ensure_buffers(h, w, use_half)
-        dtype = np.float16 if use_half else np.float32
-        fmt = self.FORMAT_HALF3 if use_half else self.FORMAT_FLOAT3
-
+        dtype, fmt = (np.float16, self.FORMAT_HALF3) if use_half else (np.float32, self.FORMAT_FLOAT3)
         arr_in = self._prep_array(color_rgb, use_half)
         nbytes = arr_in.nbytes
         color_buf = self.buf_cache["color"]
@@ -469,12 +416,10 @@ class OIDNNativeDLL:
             self.lib.oidnSetFilterInt(flt, b"quality", self.QUALITY_MAP.get(quality, 6))
             if maxmem_mb > 0:
                 self.lib.oidnSetFilterInt(flt, b"maxMemoryMB", int(maxmem_mb))
-
             self.lib.oidnCommitFilter(flt)
             self._check_error()
             self.lib.oidnExecuteFilter(flt)
             self._check_error()
-
             arr_out = np.empty((h, w, 3), dtype=dtype)
             self.lib.oidnReadBuffer(out_buf, 0, nbytes, arr_out.ctypes.data_as(ctypes.c_void_p))
             self._check_error()
@@ -519,7 +464,6 @@ class DownscaleEngine:
             val = float(scale_val_str.strip().replace(",", "."))
         except ValueError:
             val = 50.0
-
         if scale_mode == "Scale %":
             factor = np.clip(val / 100.0, 0.05, 1.0)
             if abs(factor - 1.0) < 1e-4:
@@ -535,7 +479,6 @@ class DownscaleEngine:
             tw = max(2, int(round(orig_w * (th / float(orig_h)))))
         else:
             return orig_w, orig_h
-
         if tw > 4 and (tw % 2 != 0):
             tw += 1
         if th > 4 and (th % 2 != 0):
@@ -548,8 +491,7 @@ class DownscaleEngine:
         if k_type == "mks":
             w = np.zeros_like(ax)
             m1, m2 = ax < 0.5, (ax >= 0.5) & (ax < 1.5)
-            w[m1] = 0.75 - (ax[m1] ** 2)
-            w[m2] = 0.5 * ((1.5 - ax[m2]) ** 2)
+            w[m1], w[m2] = 0.75 - (ax[m1] ** 2), 0.5 * ((1.5 - ax[m2]) ** 2)
             return w
         if k_type == "lanczos3":
             return np.where(ax < 3.0, np.sinc(x) * np.sinc(x / 3.0), 0.0)
@@ -571,22 +513,18 @@ class DownscaleEngine:
         if key in cls._POLYPHASE_CACHE:
             cls._POLYPHASE_CACHE.move_to_end(key)
             return cls._POLYPHASE_CACHE[key]
-
         R = {"mks": 1.5, "mitchell": 2.0, "catrom": 2.0, "lanczos3": 3.0, "lanczos4": 4.0}.get(k_type, 1.5)
         scale = float(n_out) / float(n_in)
         f_scale = min(scale, 1.0)
         support = R / f_scale
         num_taps = int(np.ceil(support * 2.0)) + 2
-
         centers = (np.arange(n_out, dtype=np.float64) + 0.5) / scale - 0.5
         left = np.floor(centers - support).astype(np.int32)
         raw_indices = left[:, None] + np.arange(num_taps, dtype=np.int32)[None, :]
         dist = (raw_indices.astype(np.float64) - centers[:, None]) * f_scale
-
         weights = cls._eval_continuous_kernel(dist, k_type)
         weights = (weights / np.maximum(np.sum(weights, axis=1, keepdims=True), 1e-8)).astype(np.float32)
         indices = np.clip(raw_indices, 0, n_in - 1).astype(np.int32)
-
         cls._POLYPHASE_CACHE[key] = (indices, weights)
         if len(cls._POLYPHASE_CACHE) > 32:
             cls._POLYPHASE_CACHE.popitem(last=False)
@@ -599,7 +537,6 @@ class DownscaleEngine:
         tmp = np.zeros((target_h, w_in, ch), dtype=np.float32)
         for t in range(idx_y.shape[1]):
             tmp += arr[idx_y[:, t], :, :] * w_y[:, t : t + 1, None]
-
         idx_x, w_x = cls._get_polyphase_table(w_in, target_w, k_type)
         out = np.zeros((target_h, target_w, ch), dtype=np.float32)
         for t in range(idx_x.shape[1]):
@@ -623,110 +560,73 @@ class DownscaleEngine:
             res = cls.downscale(rgb, target_w, target_h, "Mitchell-Netravali (Smooth VFX)")
             return np.ascontiguousarray(np.clip(res, 0.0, 1.0), dtype=np.float32)
         if "depth" in p_low or "position" in p_low or "normal" in p_low:
-            res = cls._resample_polyphase_2d(np.ascontiguousarray(rgb, dtype=np.float32), target_w, target_h, "mitchell")
-            return np.ascontiguousarray(res, dtype=np.float32)
+            return np.ascontiguousarray(cls._resample_polyphase_2d(np.ascontiguousarray(rgb, dtype=np.float32), target_w, target_h, "mitchell"), dtype=np.float32)
         return cls.downscale(rgb, target_w, target_h, ds_kernel)
+
+    @classmethod
+    def _apply_mks_sharp(cls, res: np.ndarray, mode_label: str) -> np.ndarray:
+        if "2013" in mode_label:
+            return cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2013_SHARP, cls.K_MKS2013_SHARP, borderType=cv2.BORDER_REPLICATE)
+        if "2021" in mode_label:
+            return cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2021_SHARP, cls.K_MKS2021_SHARP, borderType=cv2.BORDER_REPLICATE)
+        return res
 
     @classmethod
     def downscale(cls, rgb: np.ndarray, target_w: int, target_h: int, mode_label: str) -> np.ndarray:
         h, w, c = rgb.shape
         if target_w >= w and target_h >= h:
             return rgb
-        if target_w == (w // 2) and target_h == (h // 2):
-            return cls._downscale_exact_2x(rgb, mode_label)
-
+        exact_2x = (target_w == (w // 2)) and (target_h == (h // 2))
+        src = np.ascontiguousarray(rgb[: target_h * 2, : target_w * 2, :] if exact_2x else rgb, dtype=np.float32)
         is_unclamped = ("Unclamped" in mode_label) or ("Catmull-Rom" in mode_label)
+
         k_type = "mks" if ("MKS" in mode_label or "Magic Kernel" in mode_label) else (
-            "lanczos4" if "Lanczos-4" in mode_label else (
-                "lanczos3" if "Lanczos-3" in mode_label else ("catrom" if "Catmull-Rom" in mode_label else "mitchell")
-            )
+            "lanczos4" if "Lanczos-4" in mode_label else ("lanczos3" if "Lanczos-3" in mode_label else ("catrom" if "Catmull-Rom" in mode_label else "mitchell"))
         )
-        src = np.ascontiguousarray(rgb, dtype=np.float32)
+        k_2x = {"mks": cls.K_MKS_DOWN, "lanczos4": cls.K_LANCZOS4_DOWN, "lanczos3": cls.K_LANCZOS3_DOWN, "catrom": cls.K_CATROM_DOWN, "mitchell": cls.K_MITCHELL_DOWN}[k_type]
+        pad = (len(k_2x) // 2) - 1
 
         if is_unclamped:
-            res = cls._resample_polyphase_2d(src, target_w, target_h, k_type)
-            if "2013" in mode_label:
-                res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2013_SHARP, cls.K_MKS2013_SHARP, borderType=cv2.BORDER_REPLICATE)
-            elif "2021" in mode_label:
-                res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2021_SHARP, cls.K_MKS2021_SHARP, borderType=cv2.BORDER_REPLICATE)
-            return np.ascontiguousarray(np.maximum(res, 0.0), dtype=np.float32)
+            if exact_2x:
+                res = cv2.sepFilter2D(src, cv2.CV_32F, k_2x, k_2x, anchor=(pad, pad), borderType=cv2.BORDER_REPLICATE)[0::2, 0::2, :]
+            else:
+                res = cls._resample_polyphase_2d(src, target_w, target_h, k_type)
+            return np.ascontiguousarray(np.maximum(cls._apply_mks_sharp(res, mode_label), 0.0), dtype=np.float32)
 
-        area_ref = cv2.resize(src, (target_w, target_h), interpolation=cv2.INTER_AREA)
-        if area_ref.ndim == 2:
-            area_ref = area_ref[:, :, None]
-        k3 = np.ones((3, 3), dtype=np.uint8)
-        local_min, local_max = cv2.erode(area_ref, k3), cv2.dilate(area_ref, k3)
-        if local_min.ndim == 2:
-            local_min, local_max = local_min[:, :, None], local_max[:, :, None]
-
-        lum = (0.2126 * src[:, :, 0] + 0.7152 * src[:, :, 1] + 0.0722 * src[:, :, 2]) if c >= 3 else src[:, :, 0]
-        w_karis = (1.0 / (1.0 + np.maximum(lum, 0.0)))[:, :, None]
-        dec = cls._resample_polyphase_2d(np.concatenate([src * w_karis, w_karis], axis=2), target_w, target_h, k_type)
-        res = dec[:, :, :c] / np.maximum(dec[:, :, c : c + 1], 1e-7)
-
-        if "2021" in mode_label:
-            res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2021_SHARP, cls.K_MKS2021_SHARP, borderType=cv2.BORDER_REPLICATE)
-        elif "2013" in mode_label:
-            res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2013_SHARP, cls.K_MKS2013_SHARP, borderType=cv2.BORDER_REPLICATE)
-
-        if "Lanczos-3" in mode_label:
-            res = np.clip(res, local_min, local_max)
+        if exact_2x:
+            b00, b01, b10, b11 = src[0::2, 0::2, :], src[0::2, 1::2, :], src[1::2, 0::2, :], src[1::2, 1::2, :]
+            local_min = np.minimum(np.minimum(b00, b01), np.minimum(b10, b11))
+            local_max = np.maximum(np.maximum(b00, b01), np.maximum(b10, b11))
         else:
-            span = (local_max - local_min) * 0.08
-            res = np.clip(res, np.maximum(local_min - span, 0.0), local_max + span)
-        return np.ascontiguousarray(np.maximum(res, 0.0), dtype=np.float32)
-
-    @classmethod
-    def _downscale_exact_2x(cls, rgb: np.ndarray, mode_label: str) -> np.ndarray:
-        h, w, c = rgb.shape
-        h2, w2 = h // 2, w // 2
-        if h2 < 1 or w2 < 1:
-            return rgb
-        src = np.ascontiguousarray(rgb[: h2 * 2, : w2 * 2, :], dtype=np.float32)
-        is_unclamped = ("Unclamped" in mode_label) or ("Catmull-Rom" in mode_label)
-
-        k_down = cls.K_MKS_DOWN if ("MKS" in mode_label or "Magic Kernel" in mode_label) else (
-            cls.K_LANCZOS4_DOWN if "Lanczos-4" in mode_label else (
-                cls.K_LANCZOS3_DOWN if "Lanczos-3" in mode_label else (cls.K_CATROM_DOWN if "Catmull-Rom" in mode_label else cls.K_MITCHELL_DOWN)
-            )
-        )
-        pad = (len(k_down) // 2) - 1
-
-        if is_unclamped:
-            res = cv2.sepFilter2D(src, cv2.CV_32F, k_down, k_down, anchor=(pad, pad), borderType=cv2.BORDER_REPLICATE)[0::2, 0::2, :]
-            if "2013" in mode_label:
-                res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2013_SHARP, cls.K_MKS2013_SHARP, borderType=cv2.BORDER_REPLICATE)
-            elif "2021" in mode_label:
-                res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2021_SHARP, cls.K_MKS2021_SHARP, borderType=cv2.BORDER_REPLICATE)
-            return np.ascontiguousarray(np.maximum(res, 0.0), dtype=np.float32)
-
-        b00, b01, b10, b11 = src[0::2, 0::2, :], src[0::2, 1::2, :], src[1::2, 0::2, :], src[1::2, 1::2, :]
-        local_min = np.minimum(np.minimum(b00, b01), np.minimum(b10, b11))
-        local_max = np.maximum(np.maximum(b00, b01), np.maximum(b10, b11))
+            area_ref = cv2.resize(src, (target_w, target_h), interpolation=cv2.INTER_AREA)
+            if area_ref.ndim == 2:
+                area_ref = area_ref[:, :, None]
+            k3 = np.ones((3, 3), dtype=np.uint8)
+            local_min, local_max = cv2.erode(area_ref, k3), cv2.dilate(area_ref, k3)
+            if local_min.ndim == 2:
+                local_min, local_max = local_min[:, :, None], local_max[:, :, None]
 
         lum = (0.2126 * src[:, :, 0] + 0.7152 * src[:, :, 1] + 0.0722 * src[:, :, 2]) if c >= 3 else src[:, :, 0]
         w_karis = (1.0 / (1.0 + np.maximum(lum, 0.0)))[:, :, None]
         packed = np.concatenate([src * w_karis, w_karis], axis=2)
 
-        dec = cv2.sepFilter2D(packed, cv2.CV_32F, k_down, k_down, anchor=(pad, pad), borderType=cv2.BORDER_REPLICATE)[0::2, 0::2, :]
-        res = dec[:, :, :c] / np.maximum(dec[:, :, c : c + 1], 1e-7)
+        if exact_2x:
+            dec = cv2.sepFilter2D(packed, cv2.CV_32F, k_2x, k_2x, anchor=(pad, pad), borderType=cv2.BORDER_REPLICATE)[0::2, 0::2, :]
+        else:
+            dec = cls._resample_polyphase_2d(packed, target_w, target_h, k_type)
 
-        if "2021" in mode_label:
-            res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2021_SHARP, cls.K_MKS2021_SHARP, borderType=cv2.BORDER_REPLICATE)
-        elif "2013" in mode_label:
-            res = cv2.sepFilter2D(res, cv2.CV_32F, cls.K_MKS2013_SHARP, cls.K_MKS2013_SHARP, borderType=cv2.BORDER_REPLICATE)
-
+        res = cls._apply_mks_sharp(dec[:, :, :c] / np.maximum(dec[:, :, c : c + 1], 1e-7), mode_label)
         if "Lanczos-3" in mode_label:
             res = np.clip(res, local_min, local_max)
         else:
             span = (local_max - local_min) * 0.08
             res = np.clip(res, np.maximum(local_min - span, 0.0), local_max + span)
         return np.ascontiguousarray(np.maximum(res, 0.0), dtype=np.float32)
-
-
-# ================= MAIN APPLICATION GUI (POLYDENOISE STUDIO) =================
+# === END OF PART 1 (PASTE PART 2 DIRECTLY BELOW) ===
+# === START OF PART 2 ===
 class PolyDenoiseStudio(ctk.CTk):
     BEAUTY_SUM_KEY = "[⚡ Sum All Lights (Beauty)]"
+    ZOOM_STEPS = [25, 33, 50, 67, 75, 100, 125, 150, 200, 250, 300, 400]
 
     AUX_ALIASES = {
         "normals_pre_bump": "normals_pre_bump", "normal_pre_bump": "normals_pre_bump",
@@ -752,7 +652,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self._icon_photo_ref = None
         self._apply_window_icon(self)
 
-        # Pre-render crisp minimalist monochrome vector icons
         self.icon_stopwatch = create_minimal_icon("stopwatch", size=17, color="#dcdcdc")
         self.icon_sliders = create_minimal_icon("sliders", size=17, color="#dcdcdc")
 
@@ -800,20 +699,15 @@ class PolyDenoiseStudio(ctk.CTk):
 
         self.linear_lru_cache = OrderedDict()
         self.cache_lock = threading.Lock()
-        self.primary_linear = self.alternate_linear = None
-        self.primary_rgb = self.alternate_rgb = None
+        self.primary_linear = self.alternate_linear = self.primary_rgb = self.alternate_rgb = None
         self.primary_tag = self.alternate_tag = ""
-        self.tk_img_primary = self.tk_img_alternate = None
-        self.canvas_img_id = None
+        self.tk_img_primary = self.tk_img_alternate = self.canvas_img_id = None
         self._last_canvas_dims = (0, 0)
+        self._img_offset_x = self._img_offset_y = 0
         self._dither_cache = {}
-        self.is_holding_compare = False
-        self.show_denoised_default = False
-        self.config_window = None
-        self.bench_window = None
-        self.bench_process = None
-        self.bench_running = False
-        self.bench_cancel_flag = False
+        self.is_holding_compare = self.show_denoised_default = False
+        self.config_window = self.bench_window = self.bench_process = None
+        self.bench_running = self.bench_cancel_flag = False
 
         self._scan_generation = 0
         self._spinner_active = False
@@ -872,13 +766,10 @@ class PolyDenoiseStudio(ctk.CTk):
         target_win.after(250, _set)
 
     def _try_init_native_dll(self):
-        candidates = [
-            BASE_DIR / "oidn" / "OpenImageDenoise.dll",
-            BASE_DIR / "OpenImageDenoise.dll",
-            BASE_DIR / "_internal" / "OpenImageDenoise.dll",
-            self.oidn_bin.parent / "OpenImageDenoise.dll"
-        ]
-        for dll_p in candidates:
+        for dll_p in [
+            BASE_DIR / "oidn" / "OpenImageDenoise.dll", BASE_DIR / "OpenImageDenoise.dll",
+            BASE_DIR / "_internal" / "OpenImageDenoise.dll", self.oidn_bin.parent / "OpenImageDenoise.dll"
+        ]:
             if dll_p.exists():
                 try:
                     self.native_oidn = OIDNNativeDLL(dll_p)
@@ -946,34 +837,18 @@ class PolyDenoiseStudio(ctk.CTk):
         self.preview_canvas.delete("spinner_overlay")
         if not self._spinner_active:
             return
-        cx = self.preview_canvas.canvasx(16)
-        cy = self.preview_canvas.canvasy(16)
-        box_w = max(210, len(self._spinner_text) * 7 + 52)
-        box_h = 34
-
-        self.preview_canvas.create_rectangle(
-            cx, cy, cx + box_w, cy + box_h,
-            fill="#141414", outline="#3b8ed0", width=1, tags="spinner_overlay"
-        )
-        ax0, ay0 = cx + 9, cy + 7
-        ax1, ay1 = ax0 + 20, ay0 + 20
-        self.preview_canvas.create_oval(
-            ax0, ay0, ax1, ay1, outline="#2c3e50", width=3, tags="spinner_overlay"
-        )
-        self.preview_canvas.create_arc(
-            ax0, ay0, ax1, ay1, start=self._spinner_angle, extent=110,
-            style="arc", outline="#4da3ff", width=3, tags="spinner_overlay"
-        )
-        self.preview_canvas.create_text(
-            cx + 38, cy + 17, text=self._spinner_text, fill="#e8e8e8",
-            anchor="w", font=("Segoe UI", 9, "bold"), tags="spinner_overlay"
-        )
+        cx, cy = self.preview_canvas.canvasx(16), self.preview_canvas.canvasy(16)
+        box_w, box_h = max(210, len(self._spinner_text) * 7 + 52), 34
+        self.preview_canvas.create_rectangle(cx, cy, cx + box_w, cy + box_h, fill="#141414", outline="#3b8ed0", width=1, tags="spinner_overlay")
+        ax0, ay0, ax1, ay1 = cx + 9, cy + 7, cx + 29, cy + 27
+        self.preview_canvas.create_oval(ax0, ay0, ax1, ay1, outline="#2c3e50", width=3, tags="spinner_overlay")
+        self.preview_canvas.create_arc(ax0, ay0, ax1, ay1, start=self._spinner_angle, extent=110, style="arc", outline="#4da3ff", width=3, tags="spinner_overlay")
+        self.preview_canvas.create_text(cx + 38, cy + 17, text=self._spinner_text, fill="#e8e8e8", anchor="w", font=("Segoe UI", 9, "bold"), tags="spinner_overlay")
 
     def setup_ui(self):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # ================= SIDEBAR =================
         self.sidebar = ctk.CTkFrame(self, width=375)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.sidebar.grid_propagate(False)
@@ -981,7 +856,6 @@ class PolyDenoiseStudio(ctk.CTk):
         bold_font = ctk.CTkFont(size=14, weight="bold")
         lbl_font = ctk.CTkFont(size=11)
 
-        # --- Section 1: Source Folder + Minimalist Vector Icons (Benchmark & Config) ---
         ctk.CTkLabel(self.sidebar, text="1. Source Folder & Settings", font=bold_font).pack(pady=(8, 3), anchor="w", padx=10)
         p_row = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         p_row.pack(fill="x", padx=8, pady=2)
@@ -990,44 +864,23 @@ class PolyDenoiseStudio(ctk.CTk):
         self.folder_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
         CTkToolTip(self.folder_btn, "Select folder with EXR render passes.\nDisplays the first light pass immediately while scanning the rest in the background!")
 
-        self.cfg_btn = ctk.CTkButton(
-            p_row, text="", image=self.icon_sliders, width=32, height=28,
-            fg_color="#2b2b2b", hover_color="#3f3f3f", corner_radius=6,
-            command=self.open_config_popup
-        )
+        self.cfg_btn = ctk.CTkButton(p_row, text="", image=self.icon_sliders, width=32, height=28, fg_color="#2b2b2b", hover_color="#3f3f3f", corner_radius=6, command=self.open_config_popup)
         self.cfg_btn.pack(side="right")
         CTkToolTip(self.cfg_btn, "Configuration, OIDN Path, Version Check & Credits")
 
-        self.bench_open_btn = ctk.CTkButton(
-            p_row, text="", image=self.icon_stopwatch, width=32, height=28,
-            fg_color="#2b2b2b", hover_color="#3f3f3f", corner_radius=6,
-            command=self.open_benchmark_popup
-        )
+        self.bench_open_btn = ctk.CTkButton(p_row, text="", image=self.icon_stopwatch, width=32, height=28, fg_color="#2b2b2b", hover_color="#3f3f3f", corner_radius=6, command=self.open_benchmark_popup)
         self.bench_open_btn.pack(side="right", padx=(0, 4))
         CTkToolTip(self.bench_open_btn, "OIDN Hardware Benchmark (GPU vs. CPU)")
 
-        self.folder_label = ctk.CTkLabel(
-            self.sidebar, text=f"OIDN v{self.get_oidn_version_str()} | Folder: None",
-            font=lbl_font, text_color="gray", wraplength=350
-        )
+        self.folder_label = ctk.CTkLabel(self.sidebar, text=f"OIDN v{self.get_oidn_version_str()} | Folder: None", font=lbl_font, text_color="gray", wraplength=350)
         self.folder_label.pack(padx=10, pady=(2, 4), anchor="w")
 
-        # --- Section 2: Downscaling & OpenEXR ---
         ctk.CTkLabel(self.sidebar, text="2. Downscaling & OpenEXR v3.5", font=bold_font).pack(pady=(4, 2), anchor="w", padx=10)
         ctk.CTkLabel(self.sidebar, text="Downscale Filter Kernel", font=lbl_font).pack(anchor="w", padx=10)
         self.downscale_var = ctk.StringVar(value=self.downscale_options[0])
         self.downscale_menu = ctk.CTkOptionMenu(self.sidebar, variable=self.downscale_var, values=self.downscale_options, height=26, command=self.on_downscale_mode_change)
         self.downscale_menu.pack(fill="x", padx=8, pady=(0, 4))
-        CTkToolTip(
-            self.downscale_menu,
-            "Filter kernel applied AFTER full-res OIDN denoising:\n"
-            "• MKS 2013 (Crisp / HDR-Safe): Default crisp filter with Karis anti-ringing.\n"
-            "• MKS 2013 Unclamped: Pure linear deconvolution without HDR dampening.\n"
-            "• Lanczos-4 Unclamped: 16-tap Sinc filter for extreme micro-texture acuity.\n"
-            "• Catmull-Rom Bicubic: Sharp ArchViz bicubic filter (B=0, C=0.5).\n"
-            "• MKS 2021 / Lanczos-3 AR / Mitchell: Balanced & smooth HDR-safe options.\n"
-            "Note: Material/Object IDs automatically use Nearest-Neighbor & preserve uint32!"
-        )
+        CTkToolTip(self.downscale_menu, "Filter kernel applied AFTER full-res OIDN denoising.\nMaterial/Object IDs automatically use Nearest-Neighbor & preserve uint32!")
 
         scale_row = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         scale_row.pack(fill="x", padx=8, pady=(0, 4))
@@ -1037,7 +890,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.scale_mode_var = ctk.StringVar(value="Scale %")
         self.scale_mode_menu = ctk.CTkOptionMenu(s_col1, variable=self.scale_mode_var, values=self.scale_mode_options, width=145, height=26, command=self.on_scale_mode_select)
         self.scale_mode_menu.pack()
-        CTkToolTip(self.scale_mode_menu, "Scale %, Target Width (px), Target Height (px), or No Downscale (100%).")
 
         s_col2 = ctk.CTkFrame(scale_row, fg_color="transparent")
         s_col2.pack(side="left", padx=(0, 4))
@@ -1047,7 +899,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.scale_val_entry.pack()
         self.scale_val_entry.bind("<Return>", lambda _: self.on_downscale_mode_change())
         self.scale_val_entry.bind("<FocusOut>", lambda _: self.on_downscale_mode_change())
-        CTkToolTip(self.scale_val_entry, "Enter percentage (e.g. 50) or target pixels (e.g. 1920) and press Enter.")
 
         s_col3 = ctk.CTkFrame(scale_row, fg_color="transparent")
         s_col3.pack(side="left", fill="x", expand=True)
@@ -1063,7 +914,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.comp_var = ctk.StringVar(value="DWAB (Lossy 256-Line)")
         self.comp_menu = ctk.CTkOptionMenu(c_col1, variable=self.comp_var, values=list(self.compression_map.keys()), width=155, height=26, command=self.on_comp_change)
         self.comp_menu.pack(fill="x")
-        CTkToolTip(self.comp_menu, "OpenEXR v3.5.3 codec for denoised Beauty/Light passes.\nNote: Embedded Alpha channels are always compressed losslessly.")
 
         c_col2 = ctk.CTkFrame(exr_grid, fg_color="transparent")
         c_col2.pack(side="left", padx=(0, 4))
@@ -1071,7 +921,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.comp_level_entry = ctk.CTkEntry(c_col2, width=52, height=26)
         self.comp_level_entry.insert(0, "20")
         self.comp_level_entry.pack()
-        CTkToolTip(self.comp_level_entry, "Compression Level (Default DWAB=20 for high quality, ZSTD=1-22, LJ2K=1-150).")
 
         c_col3 = ctk.CTkFrame(exr_grid, fg_color="transparent")
         c_col3.pack(side="right")
@@ -1079,28 +928,17 @@ class PolyDenoiseStudio(ctk.CTk):
         self.exr_depth_var = ctk.StringVar(value="HALF (16-bit)")
         self.exr_depth_menu = ctk.CTkOptionMenu(c_col3, variable=self.exr_depth_var, values=["HALF (16-bit)", "FLOAT (32-bit)"], width=125, height=26)
         self.exr_depth_menu.pack()
-        CTkToolTip(self.exr_depth_menu, "HALF (16-bit Float) or FLOAT (32-bit Float).")
 
         aux_codec_row = ctk.CTkFrame(self.sidebar, fg_color="#222222", corner_radius=6)
         aux_codec_row.pack(fill="x", padx=8, pady=(0, 6))
         self.sep_aux_comp_var = ctk.BooleanVar(value=True)
-        self.sep_aux_cb = ctk.CTkCheckBox(
-            aux_codec_row, text="Separate Aux/Mask/ID Codec:", variable=self.sep_aux_comp_var,
-            font=lbl_font, checkbox_width=18, checkbox_height=18, command=self._on_toggle_aux_codec
-        )
+        self.sep_aux_cb = ctk.CTkCheckBox(aux_codec_row, text="Separate Aux/Mask/ID Codec:", variable=self.sep_aux_comp_var, font=lbl_font, checkbox_width=18, checkbox_height=18, command=self._on_toggle_aux_codec)
         self.sep_aux_cb.pack(side="left", padx=(8, 4), pady=5)
-        CTkToolTip(
-            self.sep_aux_cb,
-            "Uses a dedicated lossless codec (default: ZIP) for Masks, Depth, Material ID, Object ID, Alpha, and Normals.\n"
-            "Also tags non-color passes with OpenEXR v3.5 'colorInteropID = data'."
-        )
 
         self.aux_comp_var = ctk.StringVar(value="ZIP (Lossless 16-Line)")
         self.aux_comp_menu = ctk.CTkOptionMenu(aux_codec_row, variable=self.aux_comp_var, values=self.aux_compression_options, width=165, height=24)
         self.aux_comp_menu.pack(side="right", padx=(0, 6), pady=5)
-        CTkToolTip(self.aux_comp_menu, "Lossless codec for flat Masks, Depth, and ID passes (ZIP, ZSTD, RLE, ZIPS, PIZ).")
 
-        # --- Section 3: OIDN & Guide Passes ---
         ctk.CTkLabel(self.sidebar, text="3. OIDN & Guide Parameters", font=bold_font).pack(pady=(2, 2), anchor="w", padx=10)
         row_aux = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         row_aux.pack(fill="x", padx=8, pady=(0, 4))
@@ -1109,23 +947,15 @@ class PolyDenoiseStudio(ctk.CTk):
         a_col1.pack(side="left", fill="x", expand=True, padx=(0, 4))
         ctk.CTkLabel(a_col1, text="Aux Guide Passes", font=lbl_font).pack(anchor="w")
         self.aux_mode_var = ctk.StringVar(value="Albedo + Normals (Bump)")
-        self.aux_mode_menu = ctk.CTkOptionMenu(
-            a_col1, variable=self.aux_mode_var, width=170, height=26,
-            values=["Albedo + Normals (Bump)", "Albedo + Normals (Pre-Bump)", "Albedo Only", "None (Color Only)"]
-        )
+        self.aux_mode_menu = ctk.CTkOptionMenu(a_col1, variable=self.aux_mode_var, width=170, height=26, values=["Albedo + Normals (Bump)", "Albedo + Normals (Pre-Bump)", "Albedo Only", "None (Color Only)"])
         self.aux_mode_menu.pack(fill="x")
-        CTkToolTip(self.aux_mode_menu, "Selects Albedo & Normal guide passes uploaded to GPU VRAM.")
 
         a_col2 = ctk.CTkFrame(row_aux, fg_color="transparent")
         a_col2.pack(side="right", fill="x", expand=True)
         ctk.CTkLabel(a_col2, text="Noise De-Correlation", font=lbl_font).pack(anchor="w")
         self.decorr_var = ctk.StringVar(value="Standard 1x (1px Noise)")
-        self.decorr_menu = ctk.CTkOptionMenu(
-            a_col2, variable=self.decorr_var, width=165, height=26,
-            values=["Standard 1x (1px Noise)", "2x2 Stride + 1x Polish", "3x3 Stride + 1x Polish"]
-        )
+        self.decorr_menu = ctk.CTkOptionMenu(a_col2, variable=self.decorr_var, width=165, height=26, values=["Standard 1x (1px Noise)", "2x2 Stride + 1x Polish", "3x3 Stride + 1x Polish"])
         self.decorr_menu.pack(fill="x")
-        CTkToolTip(self.decorr_menu, "Standard 1x for 200% renders without SuperSampling.\n2x2 / 3x3 Stride breaks correlated multi-pixel supersampling grain.")
 
         row_dqp = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         row_dqp.pack(fill="x", padx=8, pady=(0, 4))
@@ -1135,7 +965,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.device_var = ctk.StringVar(value="cuda")
         self.device_menu = ctk.CTkOptionMenu(d_col1, variable=self.device_var, values=["cuda", "cpu", "default", "sycl", "hip", "metal"], width=105, height=26)
         self.device_menu.pack()
-        CTkToolTip(self.device_menu, "Compute backend (cuda = NVIDIA Tensor Cores).")
 
         d_col2 = ctk.CTkFrame(row_dqp, fg_color="transparent")
         d_col2.pack(side="left", padx=(0, 4))
@@ -1143,7 +972,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.quality_var = ctk.StringVar(value="high")
         self.quality_menu = ctk.CTkOptionMenu(d_col2, variable=self.quality_var, values=["high", "balanced", "fast"], width=115, height=26)
         self.quality_menu.pack()
-        CTkToolTip(self.quality_menu, "OIDN neural network quality preset.")
 
         d_col3 = ctk.CTkFrame(row_dqp, fg_color="transparent")
         d_col3.pack(side="right")
@@ -1151,7 +979,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.precision_var = ctk.StringVar(value="half")
         self.precision_menu = ctk.CTkOptionMenu(d_col3, variable=self.precision_var, values=["half", "float"], width=110, height=26)
         self.precision_menu.pack()
-        CTkToolTip(self.precision_menu, "VRAM tensor format: half (FP16 = 259, 2x faster) or float (FP32 = 3).")
 
         row_hfv = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         row_hfv.pack(fill="x", padx=8, pady=(0, 4))
@@ -1161,7 +988,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.hdr_mode_var = ctk.StringVar(value="HDR Linear")
         self.hdr_mode_menu = ctk.CTkOptionMenu(h_col1, variable=self.hdr_mode_var, values=["HDR Linear", "HDR Clamp Fireflies", "LDR Normalized"], width=150, height=26)
         self.hdr_mode_menu.pack()
-        CTkToolTip(self.hdr_mode_menu, "HDR transfer curve mode.")
 
         h_col2 = ctk.CTkFrame(row_hfv, fg_color="transparent")
         h_col2.pack(side="left", padx=(0, 4))
@@ -1169,7 +995,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.filter_var = ctk.StringVar(value="RT")
         self.filter_menu = ctk.CTkOptionMenu(h_col2, variable=self.filter_var, values=["RT", "RTLightmap"], width=105, height=26)
         self.filter_menu.pack()
-        CTkToolTip(self.filter_menu, "RT (Raytracing) or RTLightmap.")
 
         h_col3 = ctk.CTkFrame(row_hfv, fg_color="transparent")
         h_col3.pack(side="right")
@@ -1177,83 +1002,43 @@ class PolyDenoiseStudio(ctk.CTk):
         self.verbose_var = ctk.StringVar(value="2")
         self.verbose_menu = ctk.CTkOptionMenu(h_col3, variable=self.verbose_var, values=["0", "1", "2", "3", "4"], width=75, height=26)
         self.verbose_menu.pack()
-        CTkToolTip(self.verbose_menu, "Console verbosity level (0=Silent to 4=Debug).")
 
-        # --- Compact 2-Column Checkbox Grid ---
         cb_grid = ctk.CTkFrame(self.sidebar, fg_color="#222222", corner_radius=6)
         cb_grid.pack(fill="x", padx=8, pady=(2, 5))
         cb_grid.grid_columnconfigure(0, weight=1)
         cb_grid.grid_columnconfigure(1, weight=1)
 
         self.clean_aux_var = ctk.BooleanVar(value=True)
-        cb1 = ctk.CTkCheckBox(cb_grid, text="CleanAux (--clean_aux)", variable=self.clean_aux_var, font=lbl_font, checkbox_width=18, checkbox_height=18)
-        cb1.grid(row=0, column=0, sticky="w", padx=8, pady=(5, 2))
-        CTkToolTip(cb1, "Assumes Albedo & Normals are noise-free to preserve micro-bumps.")
+        ctk.CTkCheckBox(cb_grid, text="CleanAux (--clean_aux)", variable=self.clean_aux_var, font=lbl_font, checkbox_width=18, checkbox_height=18).grid(row=0, column=0, sticky="w", padx=8, pady=(5, 2))
 
         self.inplace_var = ctk.BooleanVar(value=False)
-        cb2 = ctk.CTkCheckBox(cb_grid, text="Inplace VRAM", variable=self.inplace_var, font=lbl_font, checkbox_width=18, checkbox_height=18)
-        cb2.grid(row=0, column=1, sticky="w", padx=8, pady=(5, 2))
-        CTkToolTip(
-            cb2,
-            "Shares input/output VRAM buffer to save ~75MB VRAM.\n"
-            "Drawback: Overwrites input buffers in-place and adds overhead when tiling."
-        )
+        ctk.CTkCheckBox(cb_grid, text="Inplace VRAM", variable=self.inplace_var, font=lbl_font, checkbox_width=18, checkbox_height=18).grid(row=0, column=1, sticky="w", padx=8, pady=(5, 2))
 
         self.downscale_aux_var = ctk.BooleanVar(value=True)
-        cb3 = ctk.CTkCheckBox(cb_grid, text="Scale Aux & Masks", variable=self.downscale_aux_var, font=lbl_font, checkbox_width=18, checkbox_height=18)
-        cb3.grid(row=1, column=0, sticky="w", padx=8, pady=2)
-        CTkToolTip(cb3, "Downscales Aux, Masks, Depth & IDs to match target resolution.")
+        ctk.CTkCheckBox(cb_grid, text="Scale Aux & Masks", variable=self.downscale_aux_var, font=lbl_font, checkbox_width=18, checkbox_height=18).grid(row=1, column=0, sticky="w", padx=8, pady=2)
 
         self.async_save_var = ctk.BooleanVar(value=True)
-        cb4 = ctk.CTkCheckBox(cb_grid, text="Async RAM Save", variable=self.async_save_var, font=lbl_font, checkbox_width=18, checkbox_height=18)
-        cb4.grid(row=1, column=1, sticky="w", padx=8, pady=2)
-        CTkToolTip(cb4, "Writes EXRs on 4 background CPU workers (with balanced OpenEXR thread allocation).")
+        ctk.CTkCheckBox(cb_grid, text="Async RAM Save", variable=self.async_save_var, font=lbl_font, checkbox_width=18, checkbox_height=18).grid(row=1, column=1, sticky="w", padx=8, pady=2)
 
         self.skip_empty_var = ctk.BooleanVar(value=True)
-        cb5 = ctk.CTkCheckBox(
-            cb_grid, text="Skip Empty (Black)", variable=self.skip_empty_var,
-            font=lbl_font, checkbox_width=18, checkbox_height=18,
-            command=lambda: self.parse_indigo_passes() if self.input_folder else None
-        )
-        cb5.grid(row=2, column=0, sticky="w", padx=8, pady=(2, 5))
-        CTkToolTip(
-            cb5,
-            "Detects 100% black light passes in the background (marks them with ⚫ [Empty]) "
-            "and skips them during OIDN denoising."
-        )
+        ctk.CTkCheckBox(cb_grid, text="Skip Empty (Black)", variable=self.skip_empty_var, font=lbl_font, checkbox_width=18, checkbox_height=18, command=lambda: self.parse_indigo_passes() if self.input_folder else None).grid(row=2, column=0, sticky="w", padx=8, pady=(2, 5))
 
         self.skip_existing_var = ctk.BooleanVar(value=False)
-        cb6 = ctk.CTkCheckBox(
-            cb_grid, text="Skip Done (Resume)", variable=self.skip_existing_var,
-            font=lbl_font, checkbox_width=18, checkbox_height=18,
-            command=lambda: self.parse_indigo_passes() if self.input_folder else None
-        )
-        cb6.grid(row=2, column=1, sticky="w", padx=8, pady=(2, 5))
-        CTkToolTip(cb6, "Skips raw passes that already have a '_denoised.exr' file on disk.")
+        ctk.CTkCheckBox(cb_grid, text="Skip Done (Resume)", variable=self.skip_existing_var, font=lbl_font, checkbox_width=18, checkbox_height=18, command=lambda: self.parse_indigo_passes() if self.input_folder else None).grid(row=2, column=1, sticky="w", padx=8, pady=(2, 5))
 
         extra_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         extra_frame.pack(fill="x", padx=8, pady=(0, 5))
         self.maxmem_entry = ctk.CTkEntry(extra_frame, placeholder_text="MaxMem MB", width=110, height=26)
         self.maxmem_entry.pack(side="left", padx=(0, 5))
-        CTkToolTip(self.maxmem_entry, "Optional VRAM limit in MB (empty = auto).")
 
         self.future_args = ctk.CTkEntry(extra_frame, placeholder_text="Custom CLI Args (e.g. OIDN v3)", height=26)
         self.future_args.pack(side="right", fill="x", expand=True)
-        CTkToolTip(self.future_args, "Extra CLI flags for future OIDN v3.x features.")
 
-        self.test_single_btn = ctk.CTkButton(
-            self.sidebar, text="Test Single Pass (Current Channel)", command=self.start_single_test_thread,
-            fg_color="#1f6aa5", height=34, state="disabled"
-        )
+        self.test_single_btn = ctk.CTkButton(self.sidebar, text="Test Single Pass (Current Channel)", command=self.start_single_test_thread, fg_color="#1f6aa5", height=34, state="disabled")
         self.test_single_btn.pack(fill="x", padx=8, pady=(2, 4))
-        CTkToolTip(self.test_single_btn, "Denoises only the currently selected Frame & Channel directly in VRAM.")
 
-        self.start_btn = ctk.CTkButton(
-            self.sidebar, text="Start Full Batch Denoise", command=self.on_start_or_cancel_click,
-            fg_color="#2b7a2b", hover_color="#1f5c1f", height=38, state="disabled"
-        )
+        self.start_btn = ctk.CTkButton(self.sidebar, text="Start Full Batch Denoise", command=self.on_start_or_cancel_click, fg_color="#2b7a2b", hover_color="#1f5c1f", height=38, state="disabled")
         self.start_btn.pack(fill="x", padx=8, pady=(2, 8))
-        CTkToolTip(self.start_btn, "Starts processing all queued passes. Turns into Cancel button while running.")
 
         # ================= MAIN AREA =================
         self.main_frame = ctk.CTkFrame(self)
@@ -1269,35 +1054,24 @@ class PolyDenoiseStudio(ctk.CTk):
         self.frame_var = ctk.StringVar(value="-")
         self.frame_selector = ScrollableDropdown(self.top_bar, variable=self.frame_var, values=["-"], command=self.on_frame_change, width=135)
         self.frame_selector.pack(side="left", padx=(0, 6), pady=6)
-        CTkToolTip(self.frame_selector, "Scrollable Frame Selector with Search Filter & ◀ / ▶ step buttons.")
 
         ctk.CTkLabel(self.top_bar, text="Channel:").pack(side="left", padx=(2, 3), pady=6)
         self.channel_var = ctk.StringVar(value="-")
-        self.channel_selector = ScrollableDropdown(
-            self.top_bar, variable=self.channel_var, values=["-"], command=self.on_channel_change,
-            width=195, display_formatter=self._format_channel_label
-        )
+        self.channel_selector = ScrollableDropdown(self.top_bar, variable=self.channel_var, values=["-"], command=self.on_channel_change, width=195, display_formatter=self._format_channel_label)
         self.channel_selector.pack(side="left", padx=(0, 6), pady=6)
-        CTkToolTip(
-            self.channel_selector,
-            "Lists clean base channels:\n"
-            "• ✓ = _denoised version exists\n"
-            "• ⚫ = Empty (100% black) pass\n"
-            "Hold Left-Click (or Spacebar) on the image to show Denoised!"
-        )
 
-        self.swap_default_btn = ctk.CTkButton(
-            self.top_bar, text="Hold: Denoised", width=105, height=28,
-            fg_color="#3b5998", hover_color="#2d4373", command=self.toggle_default_view_mode
-        )
+        self.swap_default_btn = ctk.CTkButton(self.top_bar, text="Hold: Denoised", width=105, height=28, fg_color="#3b5998", hover_color="#2d4373", command=self.toggle_default_view_mode)
         self.swap_default_btn.pack(side="left", padx=(0, 6), pady=6)
-        CTkToolTip(self.swap_default_btn, "Switches whether the viewport shows Raw by default (Hold LMB = Denoised) or Denoised by default.")
 
         ctk.CTkLabel(self.top_bar, text="Zoom:").pack(side="left", padx=(2, 2), pady=6)
         self.zoom_var = ctk.StringVar(value="100%")
-        self.zoom_menu = ctk.CTkOptionMenu(self.top_bar, variable=self.zoom_var, values=["100%", "200%", "300%", "50%", "Fit"], width=74, height=28, command=self.on_zoom_change)
+        self.zoom_menu = ctk.CTkOptionMenu(
+            self.top_bar, variable=self.zoom_var,
+            values=["Fit"] + [f"{z}%" for z in self.ZOOM_STEPS],
+            width=78, height=28, command=self.on_zoom_change
+        )
         self.zoom_menu.pack(side="left", padx=(0, 6), pady=6)
-        CTkToolTip(self.zoom_menu, "Viewport zoom (Ctrl + MouseWheel).")
+        CTkToolTip(self.zoom_menu, "Scroll MouseWheel directly on the image to zoom in/out at the mouse cursor position!")
 
         ctk.CTkLabel(self.top_bar, text="EV:").pack(side="left", padx=(2, 2), pady=6)
         self.ev_var = ctk.DoubleVar(value=0.0)
@@ -1305,12 +1079,10 @@ class PolyDenoiseStudio(ctk.CTk):
         self.ev_slider.pack(side="left", padx=(0, 3), pady=6)
         self.ev_reset_btn = ctk.CTkButton(self.top_bar, text="0.0", width=36, height=24, fg_color="#3a3a3a", command=self.reset_ev)
         self.ev_reset_btn.pack(side="left", padx=(0, 6), pady=6)
-        CTkToolTip(self.ev_slider, "Real-time 60fps Exposure slider (-5 EV to +5 EV) via 12-bit RAM LUT (<2ms).")
 
         self.res_label = ctk.CTkLabel(self.top_bar, text="", text_color="#8ab4f8", font=lbl_font)
         self.res_label.pack(side="right", padx=8)
 
-        # --- Viewport Canvas ---
         self.canvas_container = ctk.CTkFrame(self.main_frame)
         self.canvas_container.grid(row=1, column=0, sticky="nsew", padx=10, pady=4)
         self.canvas_container.grid_rowconfigure(0, weight=1)
@@ -1333,7 +1105,6 @@ class PolyDenoiseStudio(ctk.CTk):
         self.preview_canvas.bind("<MouseWheel>", self.on_mousewheel)
         self.preview_canvas.bind("<Configure>", self._on_canvas_configure)
 
-        # --- Log Header Bar (Progress Bar hidden until active!) ---
         self.progress_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.progress_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=0)
         self.progress_frame.grid_columnconfigure(0, weight=1)
@@ -1344,7 +1115,6 @@ class PolyDenoiseStudio(ctk.CTk):
 
         self.clear_log_btn = ctk.CTkButton(self.progress_frame, text="Clear Log", width=85, height=22, fg_color="#444444", hover_color="#5a5a5a", command=self.clear_log)
         self.clear_log_btn.grid(row=0, column=2, sticky="e", padx=(0, 2), pady=2)
-        CTkToolTip(self.clear_log_btn, "Clears the console log output below.")
 
         self.log_textbox = ctk.CTkTextbox(self.main_frame, height=170, font=ctk.CTkFont(family="Consolas", size=12))
         self.log_textbox.grid(row=3, column=0, sticky="nsew", padx=10, pady=(2, 8))
@@ -1370,10 +1140,7 @@ class PolyDenoiseStudio(ctk.CTk):
         win.attributes("-topmost", True)
         self._apply_window_icon(win)
 
-        bold_f = ctk.CTkFont(size=14, weight="bold")
-        lbl_f = ctk.CTkFont(size=11)
-        mono_f = ctk.CTkFont(family="Consolas", size=12)
-
+        bold_f, lbl_f, mono_f = ctk.CTkFont(size=14, weight="bold"), ctk.CTkFont(size=11), ctk.CTkFont(family="Consolas", size=12)
         top_box = ctk.CTkFrame(win, corner_radius=8)
         top_box.pack(fill="x", padx=12, pady=(12, 6))
 
@@ -1390,55 +1157,17 @@ class PolyDenoiseStudio(ctk.CTk):
 
         cur_gpu = self.device_var.get() if self.device_var.get() != "cpu" else "cuda"
         self.bench_mode_var = ctk.StringVar(value=f"GPU ({cur_gpu}) + CPU Comparison")
-        mode_menu = ctk.CTkOptionMenu(
-            ctrl_row,
-            variable=self.bench_mode_var,
-            values=[
-                f"GPU ({cur_gpu}) + CPU Comparison",
-                f"GPU Only ({cur_gpu})",
-                "CPU Only (cpu)"
-            ],
-            width=215,
-            height=28
-        )
-        mode_menu.pack(side="left", padx=(0, 8))
+        ctk.CTkOptionMenu(ctrl_row, variable=self.bench_mode_var, width=215, height=28, values=[f"GPU ({cur_gpu}) + CPU Comparison", f"GPU Only ({cur_gpu})", "CPU Only (cpu)"]).pack(side="left", padx=(0, 8))
 
         self.bench_scope_var = ctk.StringVar(value="Quick Production (6 Tests/Device)")
-        scope_menu = ctk.CTkOptionMenu(
-            ctrl_row,
-            variable=self.bench_scope_var,
-            values=[
-                "Quick Production (6 Tests/Device)",
-                "Quick CleanAux Only (3 Tests/Device)",
-                "Ultra-Fast 1080p (1 Test/Device)",
-                "Full Suite (All 15 Tests/Device)"
-            ],
-            width=255,
-            height=28
-        )
+        scope_menu = ctk.CTkOptionMenu(ctrl_row, variable=self.bench_scope_var, width=255, height=28, values=["Quick Production (6 Tests/Device)", "Quick CleanAux Only (3 Tests/Device)", "Ultra-Fast 1080p (1 Test/Device)", "Full Suite (All 15 Tests/Device)"])
         scope_menu.pack(side="left", padx=(0, 8))
-        CTkToolTip(
-            scope_menu,
-            "• Quick Production (6 Tests/Device): Tests both CleanAux and Prefiltered Aux in 1080p, 4K & 720p.\n"
-            "• Quick CleanAux Only (3 Tests/Device): Tests only RT.hdr_alb_nrm in 1080p, 4K & 720p.\n"
-            "• Ultra-Fast 1080p (1 Test/Device): Tests only 1920x1080 HDR.\n"
-            "• Full Suite (15 Tests/Device): Runs all HDR, LDR, and Lightmap tests."
-        )
 
-        self.bench_run_btn = ctk.CTkButton(
-            ctrl_row, text="▶ Run", width=105, height=28,
-            fg_color="#2b7a2b", hover_color="#1f5c1f",
-            state="normal" if bench_exe.exists() else "disabled",
-            command=self._on_bench_run_or_stop
-        )
+        self.bench_run_btn = ctk.CTkButton(ctrl_row, text="▶ Run", width=105, height=28, fg_color="#2b7a2b", hover_color="#1f5c1f", state="normal" if bench_exe.exists() else "disabled", command=self._on_bench_run_or_stop)
         self.bench_run_btn.pack(side="right")
 
-        # Clean, non-flickering progress bar & label (e.g. "CPU Test 2/6")
         self.bench_prog_frame = ctk.CTkFrame(win, fg_color="transparent")
-        self.bench_prog_lbl = ctk.CTkLabel(
-            self.bench_prog_frame, text="", font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#4da3ff", anchor="w"
-        )
+        self.bench_prog_lbl = ctk.CTkLabel(self.bench_prog_frame, text="", font=ctk.CTkFont(size=12, weight="bold"), text_color="#4da3ff", anchor="w")
         self.bench_prog_lbl.pack(fill="x", padx=2, pady=(0, 2))
         self.bench_pbar = ctk.CTkProgressBar(self.bench_prog_frame, height=10)
         self.bench_pbar.set(0.0)
@@ -1446,11 +1175,7 @@ class PolyDenoiseStudio(ctk.CTk):
 
         self.bench_textbox = ctk.CTkTextbox(win, font=mono_f)
         self.bench_textbox.pack(fill="both", expand=True, padx=12, pady=(4, 12))
-        self._bench_log(
-            "Ready. Select mode above and click '▶ Run' to benchmark your GPU & CPU.\n"
-            "• Quick Production (6 Tests): Tests 1080p, 4K & 720p (CleanAux + Prefiltered).\n"
-            "• Quick CleanAux Only (3 Tests): Tests 1080p, 4K & 720p (CleanAux only).\n"
-        )
+        self._bench_log("Ready. Select mode above and click '▶ Run' to benchmark your GPU & CPU.\n")
 
     def _bench_log(self, text: str):
         if self.bench_window is not None and self.bench_window.winfo_exists():
@@ -1459,26 +1184,21 @@ class PolyDenoiseStudio(ctk.CTk):
 
     def _bench_replace_running_line(self, final_line: str):
         if self.bench_window is not None and self.bench_window.winfo_exists():
-            content = self.bench_textbox.get("1.0", "end-1c")
-            lines = content.split("\n")
+            lines = self.bench_textbox.get("1.0", "end-1c").split("\n")
             for idx in range(len(lines) - 1, -1, -1):
                 if lines[idx].endswith("running..."):
                     lines[idx] = final_line
                     break
             else:
                 lines.append(final_line)
-            # Rejoin without adding duplicate blank lines
-            clean_text = "\n".join(lines)
-            if not clean_text.endswith("\n"):
-                clean_text += "\n"
+            clean_text = "\n".join(lines) + ("\n" if not lines[-1].endswith("\n") else "")
             self.bench_textbox.delete("1.0", "end")
             self.bench_textbox.insert("1.0", clean_text)
             self.bench_textbox.see("end")
 
     def _update_bench_progress(self, dev_idx: int, dev_total: int, status_text=None):
         if self.bench_window is not None and self.bench_window.winfo_exists():
-            ratio = min(1.0, max(0.0, dev_idx / float(max(dev_total, 1))))
-            self.bench_pbar.set(ratio)
+            self.bench_pbar.set(min(1.0, max(0.0, dev_idx / float(max(dev_total, 1)))))
             if status_text is not None:
                 self.bench_prog_lbl.configure(text=status_text, text_color="#4da3ff")
 
@@ -1500,43 +1220,27 @@ class PolyDenoiseStudio(ctk.CTk):
             self._bench_log(f"ERROR: oidnBenchmark.exe not found at {bench_exe}")
             return
 
-        self.bench_running = True
-        self.bench_cancel_flag = False
+        self.bench_running, self.bench_cancel_flag = True, False
         self.bench_textbox.delete("1.0", "end")
         self.bench_run_btn.configure(text="■ Stop", fg_color="#8b2626", hover_color="#a83232")
         self.bench_pbar.set(0.0)
         self.bench_prog_lbl.configure(text="Starting...", text_color="#4da3ff")
         self.bench_prog_frame.pack(fill="x", padx=12, pady=(0, 4), before=self.bench_textbox)
 
-        mode_str = self.bench_mode_var.get()
-        scope_str = self.bench_scope_var.get()
+        mode_str, scope_str = self.bench_mode_var.get(), self.bench_scope_var.get()
         cur_gpu = self.device_var.get() if self.device_var.get() != "cpu" else "cuda"
-
-        if "Comparison" in mode_str:
-            devices_to_run = [cur_gpu, "cpu"]
-        elif "GPU Only" in mode_str:
-            devices_to_run = [cur_gpu]
-        else:
-            devices_to_run = ["cpu"]
+        devices_to_run = [cur_gpu, "cpu"] if "Comparison" in mode_str else ([cur_gpu] if "GPU Only" in mode_str else ["cpu"])
 
         if scope_str.startswith("Quick Production"):
-            regex_filter = r".*hdr_.*nrm\..*"
-            tests_per_dev = 6
+            regex_filter, tests_per_dev = r".*hdr_.*nrm\..*", 6
         elif scope_str.startswith("Quick CleanAux"):
-            regex_filter = r"RT\.hdr_alb_nrm\..*"
-            tests_per_dev = 3
+            regex_filter, tests_per_dev = r"RT\.hdr_alb_nrm\..*", 3
         elif scope_str.startswith("Ultra-Fast"):
-            regex_filter = r"RT\.hdr_alb_nrm\.1920x1080"
-            tests_per_dev = 1
+            regex_filter, tests_per_dev = r"RT\.hdr_alb_nrm\.1920x1080", 1
         else:
-            regex_filter = None
-            tests_per_dev = 15
+            regex_filter, tests_per_dev = None, 15
 
-        threading.Thread(
-            target=self._benchmark_worker,
-            args=(bench_exe, devices_to_run, regex_filter, tests_per_dev),
-            daemon=True
-        ).start()
+        threading.Thread(target=self._benchmark_worker, args=(bench_exe, devices_to_run, regex_filter, tests_per_dev), daemon=True).start()
 
     def _benchmark_worker(self, bench_exe: Path, devices: list, regex_filter, tests_per_dev: int):
         results_by_dev = {}
@@ -1545,14 +1249,8 @@ class PolyDenoiseStudio(ctk.CTk):
         for dev in devices:
             if self.bench_cancel_flag:
                 break
-            cmd = [str(bench_exe), "-d", dev, "-v", "1"]
-            if regex_filter:
-                cmd.extend(["-r", regex_filter])
-
-            # Reset counter to 0 at the start of each device so CPU also counts 1/6 .. 6/6!
-            dev_test_idx = 0
-            dev_upper = dev.upper()
-
+            cmd = [str(bench_exe), "-d", dev, "-v", "1"] + (["-r", regex_filter] if regex_filter else [])
+            dev_test_idx, dev_upper = 0, dev.upper()
             header_msg = f"=== Running OIDN Benchmark on [{dev_upper}] ==="
             self.after(0, lambda m=header_msg: self._bench_log(m))
             self.after(0, lambda du=dev_upper, t=tests_per_dev: self._update_bench_progress(0, t, f"{du} Test 1/{t}"))
@@ -1560,27 +1258,17 @@ class PolyDenoiseStudio(ctk.CTk):
 
             results_by_dev[dev] = {}
             try:
-                self.bench_process = subprocess.Popen(
-                    cmd,
-                    cwd=str(bench_exe.parent),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    creationflags=creation_flags
-                )
+                self.bench_process = subprocess.Popen(cmd, cwd=str(bench_exe.parent), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=creation_flags)
                 fd = self.bench_process.stdout.fileno()
-                buf = ""
-                pending_test_name = None
+                buf, pending_test_name = "", None
 
-                while True:
-                    if self.bench_cancel_flag:
-                        break
+                while not self.bench_cancel_flag:
                     try:
                         chunk = os.read(fd, 512)
                     except Exception:
                         break
                     if not chunk:
                         break
-
                     buf += chunk.decode("utf-8", errors="replace")
 
                     while "\n" in buf:
@@ -1589,96 +1277,60 @@ class PolyDenoiseStudio(ctk.CTk):
                         if not line:
                             continue
 
-                        # Case A: Completion of an announced test (" ...")
                         if pending_test_name is not None and "msec/image" in line:
                             m_ms = re.search(r"([\d\.]+)\s+msec/image", line)
                             if m_ms:
                                 msec_val = float(m_ms.group(1))
-                                ms_int = int(round(msec_val))
-                                fps_val = 1000.0 / max(msec_val, 1e-4)
+                                ms_int, fps_val = int(round(msec_val)), 1000.0 / max(msec_val, 1e-4)
                                 results_by_dev[dev][pending_test_name] = msec_val
-                                fmt_line = (
-                                    f"  [{dev_test_idx}/{tests_per_dev}] "
-                                    f"{pending_test_name:<30} : {ms_int:>6d} ms/img  ({fps_val:>5.1f} img/s)"
-                                )
+                                fmt_line = f"  [{dev_test_idx}/{tests_per_dev}] {pending_test_name:<30} : {ms_int:>6d} ms/img  ({fps_val:>5.1f} img/s)"
                                 self.after(0, lambda fl=fmt_line: self._bench_replace_running_line(fl))
-                                # Update progress bar only (no "Finished" flashing!)
                                 self.after(0, lambda c=dev_test_idx, t=tests_per_dev: self._update_bench_progress(c, t, None))
                                 self.log(fmt_line)
                             pending_test_name = None
                             continue
 
-                        # Case B: Full test line arrived in one piece
                         m_full = re.search(r"^([\w\.]+)\s+\.\.\.\s+([\d\.]+)\s+msec/image", line)
                         if m_full:
                             dev_test_idx += 1
-                            test_name = m_full.group(1)
-                            msec_val = float(m_full.group(2))
-                            ms_int = int(round(msec_val))
-                            fps_val = 1000.0 / max(msec_val, 1e-4)
+                            test_name, msec_val = m_full.group(1), float(m_full.group(2))
+                            ms_int, fps_val = int(round(msec_val)), 1000.0 / max(msec_val, 1e-4)
                             results_by_dev[dev][test_name] = msec_val
-                            fmt_line = (
-                                f"  [{dev_test_idx}/{tests_per_dev}] "
-                                f"{test_name:<30} : {ms_int:>6d} ms/img  ({fps_val:>5.1f} img/s)"
-                            )
+                            fmt_line = f"  [{dev_test_idx}/{tests_per_dev}] {test_name:<30} : {ms_int:>6d} ms/img  ({fps_val:>5.1f} img/s)"
                             self.after(0, lambda fl=fmt_line: self._bench_log(fl))
-                            self.after(
-                                0,
-                                lambda du=dev_upper, c=dev_test_idx, t=tests_per_dev: self._update_bench_progress(
-                                    c, t, f"{du} Test {c}/{t}"
-                                )
-                            )
+                            self.after(0, lambda du=dev_upper, c=dev_test_idx, t=tests_per_dev: self._update_bench_progress(c, t, f"{du} Test {c}/{t}"))
                             self.log(fmt_line)
                         else:
                             self.after(0, lambda l=line: self._bench_log(f"  {l}"))
 
-                    # Check if remaining partial buffer is a flushed "  TestName ..." prompt
                     m_part = re.search(r"^\s*([\w\.]+)\s+\.\.\.\s*$", buf)
                     if m_part and pending_test_name is None:
-                        pending_test_name = m_part.group(1)
-                        buf = ""
+                        pending_test_name, buf = m_part.group(1), ""
                         dev_test_idx += 1
                         run_line = f"  [{dev_test_idx}/{tests_per_dev}] {pending_test_name:<30} : running..."
                         self.after(0, lambda rl=run_line: self._bench_log(rl))
-                        self.after(
-                            0,
-                            lambda du=dev_upper, c=dev_test_idx, t=tests_per_dev: self._update_bench_progress(
-                                max(0, c - 1), t, f"{du} Test {c}/{t}"
-                            )
-                        )
+                        self.after(0, lambda du=dev_upper, c=dev_test_idx, t=tests_per_dev: self._update_bench_progress(max(0, c - 1), t, f"{du} Test {c}/{t}"))
 
                 self.bench_process.wait()
             except Exception as ex:
-                err_m = f"Benchmark error on {dev}: {ex}"
-                self.after(0, lambda em=err_m: self._bench_log(em))
+                self.after(0, lambda em=f"Benchmark error on {dev}: {ex}": self._bench_log(em))
             finally:
                 self.bench_process = None
-
             self.after(0, lambda: self._bench_log(""))
 
-        # Compute GPU vs CPU speedup summary with integer ms
         if not self.bench_cancel_flag and len(devices) == 2:
             gpu_dev, cpu_dev = devices[0], devices[1]
-            gpu_res = results_by_dev.get(gpu_dev, {})
-            cpu_res = results_by_dev.get(cpu_dev, {})
-            common_tests = [k for k in gpu_res.keys() if k in cpu_res]
-            if common_tests:
-                summary_lines = [
-                    "==============================================================",
-                    f"⚡ SPEEDUP SUMMARY: {gpu_dev.upper()} vs. {cpu_dev.upper()}"
-                ]
-                for t_name in common_tests:
-                    g_ms = gpu_res[t_name]
-                    c_ms = cpu_res[t_name]
-                    factor = c_ms / max(g_ms, 1e-4)
-                    summary_lines.append(
-                        f"  • {t_name:<28}: {gpu_dev.upper()} is {factor:.1f}× faster "
-                        f"({int(round(g_ms))} ms vs {int(round(c_ms))} ms)"
-                    )
-                summary_lines.append("==============================================================")
-                sum_block = "\n".join(summary_lines)
-                self.after(0, lambda sb=sum_block: self._bench_log(sb))
-                self.log(sum_block)
+            gpu_res, cpu_res = results_by_dev.get(gpu_dev, {}), results_by_dev.get(cpu_dev, {})
+            common = [k for k in gpu_res if k in cpu_res]
+            if common:
+                s_lines = ["==============================================================", f"⚡ SPEEDUP SUMMARY: {gpu_dev.upper()} vs. {cpu_dev.upper()}"]
+                for tn in common:
+                    g_ms, c_ms = gpu_res[tn], cpu_res[tn]
+                    s_lines.append(f"  • {tn:<28}: {gpu_dev.upper()} is {c_ms / max(g_ms, 1e-4):.1f}× faster ({int(round(g_ms))} ms vs {int(round(c_ms))} ms)")
+                s_lines.append("==============================================================")
+                sb = "\n".join(s_lines)
+                self.after(0, lambda s=sb: self._bench_log(s))
+                self.log(sb)
 
         def _finish_ui():
             self.bench_running = False
@@ -1693,6 +1345,45 @@ class PolyDenoiseStudio(ctk.CTk):
 
         self.after(0, _finish_ui)
 
+    def _open_local_license_file(self):
+        for cand in [BASE_DIR / "oidn" / "LICENSE.txt", BASE_DIR / "LICENSE", BASE_DIR / "LICENSE.txt"]:
+            if cand.exists():
+                try:
+                    os.startfile(str(cand))
+                    return
+                except Exception:
+                    pass
+        webbrowser.open("https://www.apache.org/licenses/LICENSE-2.0")
+
+    def _upgrade_openexr_and_restart(self, target_ver: str):
+        """Writes a clean temporary .bat script (avoiding subprocess quote-escaping bugs) and runs it via os.startfile."""
+        if getattr(sys, "frozen", False):
+            webbrowser.open("https://pypi.org/project/OpenEXR/")
+            return
+        script_path = Path(__file__).resolve()
+        py_exe = Path(sys.executable).resolve()
+        bat_path = Path(tempfile.gettempdir()) / "polydenoise_update_openexr.bat"
+        bat_content = (
+            "@echo off\r\n"
+            f"title Updating OpenEXR to v{target_ver}\r\n"
+            f"echo Closing {APP_NAME} to release Windows file lock on OpenEXR.pyd...\r\n"
+            "timeout /t 2 /nobreak >NUL\r\n"
+            f'"{py_exe}" -m pip install --upgrade --only-binary=:all: OpenEXR\r\n'
+            "if errorlevel 1 (\r\n"
+            "    echo.\r\n"
+            "    echo Update failed! Press any key to close...\r\n"
+            "    pause >NUL\r\n"
+            "    exit /b 1\r\n"
+            ")\r\n"
+            "echo.\r\n"
+            f"echo OpenEXR updated successfully! Restarting {APP_NAME}...\r\n"
+            f'start "" "{py_exe}" "{script_path}"\r\n'
+            "exit /b 0\r\n"
+        )
+        bat_path.write_text(bat_content, encoding="utf-8")
+        os.startfile(str(bat_path))
+        self._on_closing()
+
     # ================= CLEAN CONFIG, VERSIONS & CREDITS POPUP =================
     def open_config_popup(self):
         if self.config_window is not None and self.config_window.winfo_exists():
@@ -1701,15 +1392,13 @@ class PolyDenoiseStudio(ctk.CTk):
 
         self.config_window = win = ctk.CTkToplevel(self)
         win.title(f"{APP_NAME} — Configuration & About")
-        win.geometry("480x495")
-        win.minsize(480, 495)
+        win.geometry("480x525")
+        win.minsize(480, 525)
         win.resizable(False, True)
         win.attributes("-topmost", True)
         self._apply_window_icon(win)
 
-        bold_f = ctk.CTkFont(size=14, weight="bold")
-        mono_f = ctk.CTkFont(family="Consolas", size=12)
-        small_f = ctk.CTkFont(size=11)
+        bold_f, mono_f, small_f = ctk.CTkFont(size=14, weight="bold"), ctk.CTkFont(family="Consolas", size=12), ctk.CTkFont(size=11)
 
         p_frame = ctk.CTkFrame(win, corner_radius=8)
         p_frame.pack(fill="x", padx=14, pady=(12, 6))
@@ -1721,16 +1410,8 @@ class PolyDenoiseStudio(ctk.CTk):
 
         btn_row = ctk.CTkFrame(p_frame, fg_color="transparent")
         btn_row.pack(fill="x", padx=12, pady=(0, 10))
-
-        sel_btn = ctk.CTkButton(btn_row, text="Select OIDN Binary/DLL", height=28, command=self.select_binary)
-        sel_btn.pack(side="left", fill="x", expand=True, padx=(0, 6))
-
-        bench_btn = ctk.CTkButton(
-            btn_row, text="Benchmark", image=self.icon_stopwatch, compound="left",
-            height=28, width=130, fg_color="#333333", hover_color="#4a4a4a",
-            command=self.open_benchmark_popup
-        )
-        bench_btn.pack(side="right")
+        ctk.CTkButton(btn_row, text="Select OIDN Binary/DLL", height=28, command=self.select_binary).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkButton(btn_row, text="Benchmark", image=self.icon_stopwatch, compound="left", height=28, width=130, fg_color="#333333", hover_color="#4a4a4a", command=self.open_benchmark_popup).pack(side="right")
 
         v_frame = ctk.CTkFrame(win, corner_radius=8)
         v_frame.pack(fill="x", padx=14, pady=6)
@@ -1739,69 +1420,45 @@ class PolyDenoiseStudio(ctk.CTk):
         ver_grid = ctk.CTkFrame(v_frame, fg_color="transparent")
         ver_grid.pack(fill="x", padx=12, pady=(2, 6))
         ver_grid.grid_columnconfigure(0, weight=1)
-        ver_grid.grid_columnconfigure(1, weight=0)
-        ver_grid.grid_columnconfigure(2, weight=0)
 
         exr_ver = getattr(OpenEXR, "__version__", "Unknown")
         oidn_ver = self.get_oidn_version_str()
+        self.ver_status_slots, self.ver_installed_labels = {}, {}
 
-        rows_spec = [
-            ("tool", APP_NAME, f"v{APP_VERSION}"),
-            ("oidn", "Intel OIDN Engine", f"v{oidn_ver}"),
-            ("exr", "OpenEXR Library", f"v{exr_ver}")
-        ]
-        self.ver_status_slots = {}
-        self.ver_installed_labels = {}
-
-        for r_idx, (key, label_txt, ver_txt) in enumerate(rows_spec):
+        for r_idx, (key, label_txt, ver_txt) in enumerate([("tool", APP_NAME, f"v{APP_VERSION}"), ("oidn", "Intel OIDN Engine", f"v{oidn_ver}"), ("exr", "OpenEXR Library", f"v{exr_ver}")]):
             ctk.CTkLabel(ver_grid, text=label_txt, font=mono_f, anchor="w").grid(row=r_idx, column=0, sticky="w", pady=2)
             v_lbl = ctk.CTkLabel(ver_grid, text=ver_txt, font=mono_f, text_color="#cccccc", width=75, anchor="w")
             v_lbl.grid(row=r_idx, column=1, sticky="w", padx=(8, 8), pady=2)
             self.ver_installed_labels[key] = v_lbl
-
-            slot_btn = ctk.CTkButton(
-                ver_grid, text="—", width=135, height=24, font=small_f,
-                fg_color="transparent", text_color="#777777", hover=False, state="disabled"
-            )
+            slot_btn = ctk.CTkButton(ver_grid, text="—", width=135, height=24, font=small_f, fg_color="transparent", text_color="#777777", hover=False, state="disabled")
             slot_btn.grid(row=r_idx, column=2, sticky="e", pady=2)
             self.ver_status_slots[key] = slot_btn
 
-        self.chk_upd_btn = ctk.CTkButton(
-            v_frame, text="Check for Updates", height=28,
-            fg_color="#2b7a2b", hover_color="#1f5c1f", command=self._start_github_update_check
-        )
+        self.chk_upd_btn = ctk.CTkButton(v_frame, text="Check for Updates", height=28, fg_color="#2b7a2b", hover_color="#1f5c1f", command=self._start_github_update_check)
         self.chk_upd_btn.pack(fill="x", padx=12, pady=(2, 10))
 
         c_frame = ctk.CTkFrame(win, corner_radius=8, fg_color="#1b1b1b")
         c_frame.pack(fill="x", padx=14, pady=(6, 12))
-
         ctk.CTkLabel(c_frame, text="build by", font=ctk.CTkFont(size=11), text_color="#888888").pack(pady=(8, 0))
         ctk.CTkLabel(c_frame, text="Arthur Liebnau", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(0, 4))
 
-        poly_btn = ctk.CTkButton(
-            c_frame,
-            text="🌐 Polygon Manufaktur ↗",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color="#1f538d",
-            hover_color="#14375e",
-            text_color="#ffffff",
-            height=30,
-            width=220,
-            command=lambda: webbrowser.open(POLYGON_WEB_URL)
-        )
-        poly_btn.pack(pady=(0, 10))
+        poly_btn = ctk.CTkButton(c_frame, text="🌐 Polygon Manufaktur ↗", font=ctk.CTkFont(size=13, weight="bold"), fg_color="#1f538d", hover_color="#14375e", text_color="#ffffff", height=30, width=220, command=lambda: webbrowser.open(POLYGON_WEB_URL))
+        poly_btn.pack(pady=(0, 6))
         CTkToolTip(poly_btn, f"Visit {POLYGON_WEB_URL}")
+
+        lic_lbl = ctk.CTkLabel(c_frame, text="MIT License  •  Intel® OIDN © Intel Corp. (Apache-2.0)  •  OpenEXR (BSD-3)", font=ctk.CTkFont(size=10, underline=True), text_color="#777777", cursor="hand2")
+        lic_lbl.pack(pady=(0, 8))
+        lic_lbl.bind("<Button-1>", lambda _: self._open_local_license_file())
+        CTkToolTip(lic_lbl, "Click to view full license text (./oidn/LICENSE.txt / LICENSE).")
 
     @staticmethod
     def _parse_ver_tuple(v_str: str):
         m = re.search(r"(\d+(?:\.\d+)+)", str(v_str))
-        if not m:
-            return ()
-        return tuple(int(x) for x in m.group(1).split("."))
+        return tuple(int(x) for x in m.group(1).split(".")) if m else ()
 
     def _start_github_update_check(self):
         if hasattr(self, "chk_upd_btn") and self.chk_upd_btn.winfo_exists():
-            self.chk_upd_btn.configure(state="disabled", text="Checking GitHub...")
+            self.chk_upd_btn.configure(state="disabled", text="Checking GitHub & PyPI...")
         for slot in self.ver_status_slots.values():
             if slot.winfo_exists():
                 slot.configure(text="Checking...", fg_color="transparent", text_color="#8ab4f8", hover=False, state="disabled")
@@ -1817,15 +1474,25 @@ class PolyDenoiseStudio(ctk.CTk):
                     if "/tag/" in final_url:
                         raw_tag = final_url.split("/tag/")[-1].split("?")[0].strip("/")
                         m = re.search(r"(\d+\.\d+(?:\.\d+)?)", raw_tag)
-                        clean_ver = m.group(1) if m else raw_tag.lstrip("vV")
-                        return "ok", clean_ver, final_url
+                        return "ok", (m.group(1) if m else raw_tag.lstrip("vV")), final_url
                     return "unpublished", "", web_url
             except urllib.error.HTTPError as he:
-                if he.code == 404:
-                    return "unpublished", "", web_url
-                return "error", f"HTTP {he.code}", web_url
+                return ("unpublished", "", web_url) if he.code == 404 else ("error", f"HTTP {he.code}", web_url)
             except Exception:
                 return "error", "Offline", web_url
+
+        def check_openexr_pypi():
+            pypi_url = "https://pypi.org/pypi/OpenEXR/json"
+            req = urllib.request.Request(pypi_url, headers={"User-Agent": "Mozilla/5.0"})
+            try:
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    ver = data.get("info", {}).get("version", "")
+                    if ver:
+                        return "ok", ver, "https://pypi.org/project/OpenEXR/"
+            except Exception:
+                pass
+            return check_repo_redirect("AcademySoftwareFoundation/openexr")
 
         cur_oidn = self.get_oidn_version_str()
         cur_exr = getattr(OpenEXR, "__version__", "Unknown")
@@ -1833,7 +1500,7 @@ class PolyDenoiseStudio(ctk.CTk):
         checks = {
             "tool": (APP_VERSION, check_repo_redirect(TOOL_GITHUB_REPO)),
             "oidn": (cur_oidn, check_repo_redirect("RenderKit/oidn")),
-            "exr": (cur_exr, check_repo_redirect("AcademySoftwareFoundation/openexr"))
+            "exr": (cur_exr, check_openexr_pypi())
         }
 
         def _apply_slots():
@@ -1846,18 +1513,23 @@ class PolyDenoiseStudio(ctk.CTk):
                 if status == "unpublished":
                     slot.configure(text="✓ Up to date", fg_color="transparent", text_color="#4caf50", hover=False, state="disabled")
                 elif status == "ok":
-                    t_inst = self._parse_ver_tuple(installed_v)
-                    t_lat = self._parse_ver_tuple(latest_v)
+                    t_inst, t_lat = self._parse_ver_tuple(installed_v), self._parse_ver_tuple(latest_v)
                     if t_inst and t_lat and t_lat > t_inst:
-                        slot.configure(
-                            text=f"Update: v{latest_v} ↗",
-                            fg_color="#1f6aa5",
-                            hover_color="#144870",
-                            text_color="#ffffff",
-                            hover=True,
-                            state="normal",
-                            command=lambda u=rel_url: webbrowser.open(u)
-                        )
+                        if key == "exr" and not getattr(sys, "frozen", False):
+                            slot.configure(
+                                text=f"Update: v{latest_v} ⚡",
+                                fg_color="#1f6aa5", hover_color="#144870", text_color="#ffffff",
+                                hover=True, state="normal",
+                                command=lambda v=latest_v: self._upgrade_openexr_and_restart(v)
+                            )
+                            CTkToolTip(slot, f"Click to auto-update OpenEXR to v{latest_v} via pip and restart {APP_NAME}.")
+                        else:
+                            slot.configure(
+                                text=f"Update: v{latest_v} ↗",
+                                fg_color="#1f6aa5", hover_color="#144870", text_color="#ffffff",
+                                hover=True, state="normal",
+                                command=lambda u=rel_url: webbrowser.open(u)
+                            )
                     else:
                         slot.configure(text="✓ Up to date", fg_color="transparent", text_color="#4caf50", hover=False, state="disabled")
                 else:
@@ -1897,23 +1569,15 @@ class PolyDenoiseStudio(ctk.CTk):
     def _update_scale_info_label(self):
         ow, oh = self.last_known_orig_dims
         tw, th = DownscaleEngine.compute_target_size(ow, oh, self.scale_mode_var.get(), self.scale_val_entry.get())
-        pct = (tw / float(max(ow, 1))) * 100.0
-        self.scale_out_label.configure(text=f"{tw}×{th} ({pct:.0f}%)")
+        self.scale_out_label.configure(text=f"{tw}×{th} ({(tw / float(max(ow, 1))) * 100.0:.0f}%)")
 
     def on_scale_mode_select(self, mode: str):
         ow, oh = self.last_known_orig_dims
-        if mode == "Scale %":
+        if mode in ("Scale %", "Target Width (px)", "Target Height (px)"):
             self.scale_val_entry.configure(state="normal")
             self.scale_val_entry.delete(0, "end")
-            self.scale_val_entry.insert(0, "50")
-        elif mode == "Target Width (px)":
-            self.scale_val_entry.configure(state="normal")
-            self.scale_val_entry.delete(0, "end")
-            self.scale_val_entry.insert(0, str(max(2, ow // 2)))
-        elif mode == "Target Height (px)":
-            self.scale_val_entry.configure(state="normal")
-            self.scale_val_entry.delete(0, "end")
-            self.scale_val_entry.insert(0, str(max(2, oh // 2)))
+            default_v = "50" if mode == "Scale %" else str(max(2, (ow if "Width" in mode else oh) // 2))
+            self.scale_val_entry.insert(0, default_v)
         else:
             self.scale_val_entry.configure(state="disabled")
         self.on_downscale_mode_change()
@@ -1932,10 +1596,7 @@ class PolyDenoiseStudio(ctk.CTk):
 
     def toggle_default_view_mode(self):
         self.show_denoised_default = not self.show_denoised_default
-        if self.show_denoised_default:
-            self.swap_default_btn.configure(text="Hold: Raw", fg_color="#2b7a2b")
-        else:
-            self.swap_default_btn.configure(text="Hold: Denoised", fg_color="#3b5998")
+        self.swap_default_btn.configure(text="Hold: Raw" if self.show_denoised_default else "Hold: Denoised", fg_color="#2b7a2b" if self.show_denoised_default else "#3b5998")
         self.reload_current_preview()
 
     def on_ev_change(self, val):
@@ -1957,21 +1618,40 @@ class PolyDenoiseStudio(ctk.CTk):
         if frame in self.frames_data:
             self.load_preview_pair(frame, ch)
 
+    # ================= DIRECT MOUSEWHEEL ZOOM TO CURSOR POSITION =================
     def on_mousewheel(self, event):
-        if event.state & 0x0004:
-            levels = ["50%", "100%", "200%", "300%"]
-            cur = self.zoom_var.get()
-            idx = levels.index(cur) if cur in levels else 1
-            new_idx = min(len(levels) - 1, idx + 1) if event.delta > 0 else max(0, idx - 1)
-            if levels[new_idx] != cur:
-                self.zoom_var.set(levels[new_idx])
-                self.on_zoom_change()
-        elif event.state & 0x0001:
-            self.preview_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+        if self.primary_rgb is None:
+            return
+        orig_h, orig_w, _ = self.primary_rgb.shape
+        old_w, old_h = self._last_canvas_dims
+        if old_w < 1 or old_h < 1:
+            return
+
+        # 1. Capture exact image coordinate under mouse pointer before zooming
+        mx, my = event.x, event.y
+        cx = self.preview_canvas.canvasx(mx)
+        cy = self.preview_canvas.canvasy(my)
+        rel_x = np.clip((cx - self._img_offset_x) / float(old_w), 0.0, 1.0)
+        rel_y = np.clip((cy - self._img_offset_y) / float(old_h), 0.0, 1.0)
+
+        # 2. Determine current percentage and step up/down
+        cur_str = self.zoom_var.get()
+        if cur_str == "Fit":
+            cur_pct = (old_w / float(max(orig_w, 1))) * 100.0
         else:
-            self.preview_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        if self._spinner_active:
-            self._draw_spinner_overlay()
+            cur_pct = float(cur_str.replace("%", ""))
+
+        if event.delta > 0:
+            higher = [z for z in self.ZOOM_STEPS if z > cur_pct + 0.5]
+            new_pct = higher[0] if higher else self.ZOOM_STEPS[-1]
+        else:
+            lower = [z for z in self.ZOOM_STEPS if z < cur_pct - 0.5]
+            new_pct = lower[-1] if lower else self.ZOOM_STEPS[0]
+
+        new_zoom_str = f"{new_pct}%"
+        if new_zoom_str != cur_str:
+            self.zoom_var.set(new_zoom_str)
+            self.render_preview_to_canvas(anchor=(mx, my, rel_x, rel_y))
 
     def _on_canvas_configure(self, _=None):
         if self.primary_rgb is not None:
@@ -1982,28 +1662,38 @@ class PolyDenoiseStudio(ctk.CTk):
                 scale = float(self.zoom_var.get().replace("%", "")) / 100.0
                 self._update_scrollbars_and_position(max(1, int(w * scale)), max(1, int(h * scale)))
 
-    def _update_scrollbars_and_position(self, new_w: int, new_h: int):
-        canv_w = max(self.preview_canvas.winfo_width(), 100)
-        canv_h = max(self.preview_canvas.winfo_height(), 100)
+    def _update_scrollbars_and_position(self, new_w: int, new_h: int, anchor=None):
+        canv_w, canv_h = max(self.preview_canvas.winfo_width(), 100), max(self.preview_canvas.winfo_height(), 100)
         is_fit = self.zoom_var.get() == "Fit"
-        need_h = (not is_fit) and (new_w > canv_w)
-        need_v = (not is_fit) and (new_h > canv_h)
+        need_h, need_v = (not is_fit) and (new_w > canv_w), (not is_fit) and (new_h > canv_h)
 
         if need_v:
             self.v_scroll.grid(row=0, column=1, sticky="ns")
         else:
             self.v_scroll.grid_remove()
-
         if need_h:
             self.h_scroll.grid(row=1, column=0, sticky="ew")
         else:
             self.h_scroll.grid_remove()
 
-        x_off = 0 if need_h else max(0, (canv_w - new_w) // 2)
-        y_off = 0 if need_v else max(0, (canv_h - new_h) // 2)
+        self._img_offset_x = 0 if need_h else max(0, (canv_w - new_w) // 2)
+        self._img_offset_y = 0 if need_v else max(0, (canv_h - new_h) // 2)
+        sr_w, sr_h = max(new_w, canv_w), max(new_h, canv_h)
+
         if self.canvas_img_id is not None:
-            self.preview_canvas.coords(self.canvas_img_id, x_off, y_off)
-        self.preview_canvas.configure(scrollregion=(0, 0, max(new_w, canv_w), max(new_h, canv_h)))
+            self.preview_canvas.coords(self.canvas_img_id, self._img_offset_x, self._img_offset_y)
+        self.preview_canvas.configure(scrollregion=(0, 0, sr_w, sr_h))
+
+        # Anchor zoom to mouse cursor position
+        if anchor is not None:
+            mx, my, rel_x, rel_y = anchor
+            if need_h and sr_w > 0:
+                target_left = (self._img_offset_x + rel_x * new_w) - mx
+                self.preview_canvas.xview_moveto(float(np.clip(target_left / float(sr_w), 0.0, 1.0)))
+            if need_v and sr_h > 0:
+                target_top = (self._img_offset_y + rel_y * new_h) - my
+                self.preview_canvas.yview_moveto(float(np.clip(target_top / float(sr_h), 0.0, 1.0)))
+
         if self._spinner_active:
             self._draw_spinner_overlay()
 
@@ -2104,7 +1794,6 @@ class PolyDenoiseStudio(ctk.CTk):
         header = {"compression": getattr(OpenEXR, comp_attr_name), "type": OpenEXR.scanlineimage}
         if is_data_pass:
             header["colorInteropID"] = "data"
-
         if level_str:
             try:
                 vf, vi = float(level_str), int(float(level_str))
@@ -2120,8 +1809,7 @@ class PolyDenoiseStudio(ctk.CTk):
                 pass
 
         if rgb.dtype == np.uint32:
-            target_dtype = np.uint32
-            rgb_safe = rgb
+            target_dtype, rgb_safe = np.uint32, rgb
         elif use_half:
             target_dtype = np.float16
             rgb_safe = np.clip(np.nan_to_num(rgb, nan=0.0, posinf=65500.0, neginf=-65500.0), -65500.0, 65500.0)
@@ -2246,12 +1934,9 @@ class PolyDenoiseStudio(ctk.CTk):
                 continue
             aux_dict = frame_aux_lookup.get(frame_id, {})
             self.render_queue.append({
-                "target": file_path,
-                "albedo": aux_dict.get("albedo"),
-                "normal_bump": aux_dict.get("normals"),
-                "normal_pre": aux_dict.get("normals_pre_bump"),
-                "frame_id": frame_id,
-                "pass_name": pass_name
+                "target": file_path, "albedo": aux_dict.get("albedo"),
+                "normal_bump": aux_dict.get("normals"), "normal_pre": aux_dict.get("normals_pre_bump"),
+                "frame_id": frame_id, "pass_name": pass_name
             })
 
         if self.frames_data:
@@ -2270,11 +1955,7 @@ class PolyDenoiseStudio(ctk.CTk):
 
         if raw_light_candidates:
             self.start_viewport_spinner(f"Scanning {len(raw_light_candidates)} passes in background...")
-            threading.Thread(
-                target=self._background_folder_scan_worker,
-                args=(current_gen, list(raw_light_candidates), skipped_denoised),
-                daemon=True
-            ).start()
+            threading.Thread(target=self._background_folder_scan_worker, args=(current_gen, list(raw_light_candidates), skipped_denoised), daemon=True).start()
 
     def _background_folder_scan_worker(self, gen_id: int, candidates: list, paired_den_count: int):
         skip_empty = self.skip_empty_var.get()
@@ -2282,8 +1963,7 @@ class PolyDenoiseStudio(ctk.CTk):
         scan_all = len(candidates) <= 60
         discovered_empty = []
 
-        cur_f = self.frame_var.get()
-        cur_ch = self.channel_var.get()
+        cur_f, cur_ch = self.frame_var.get(), self.channel_var.get()
         if cur_f in self.denoised_data and cur_ch in self.denoised_data[cur_f]:
             den_p = self.denoised_data[cur_f][cur_ch]
             if den_p.exists():
@@ -2309,10 +1989,7 @@ class PolyDenoiseStudio(ctk.CTk):
                 self.empty_passes.setdefault(f_id, set()).add(p_name)
             if skip_empty and discovered_empty:
                 empty_lookup = set(discovered_empty)
-                self.render_queue = [
-                    item for item in self.render_queue
-                    if (item["frame_id"], item["pass_name"]) not in empty_lookup
-                ]
+                self.render_queue = [item for item in self.render_queue if (item["frame_id"], item["pass_name"]) not in empty_lookup]
             self.channel_selector.refresh_label()
             f_now, ch_now = self.frame_var.get(), self.channel_var.get()
             if self.alternate_linear is None and f_now in self.denoised_data and ch_now in self.denoised_data[f_now]:
@@ -2323,11 +2000,7 @@ class PolyDenoiseStudio(ctk.CTk):
             if not self.is_running:
                 self.start_btn.configure(state=btn_s)
                 self.test_single_btn.configure(state=btn_s)
-            self.log(
-                f"Background scan complete: {len(self.render_queue)} active light passes | "
-                f"Flagged {len(discovered_empty)} empty (black) | "
-                f"{len(self.aux_mask_files)} Aux/Mask/ID | Paired {paired_den_count} _denoised."
-            )
+            self.log(f"Background scan complete: {len(self.render_queue)} active light passes | Flagged {len(discovered_empty)} empty (black) | {len(self.aux_mask_files)} Aux/Mask/ID | Paired {paired_den_count} _denoised.")
 
         self.after(0, _finish_bg_scan)
 
@@ -2515,7 +2188,7 @@ class PolyDenoiseStudio(ctk.CTk):
             pil_img = pil_img.resize((new_w, new_h), Image.Resampling.NEAREST if scale > 1.0 else Image.Resampling.LANCZOS)
         return ImageTk.PhotoImage(pil_img)
 
-    def render_preview_to_canvas(self):
+    def render_preview_to_canvas(self, anchor=None):
         if self.primary_rgb is None:
             return
         orig_h, orig_w, _ = self.primary_rgb.shape
@@ -2540,7 +2213,7 @@ class PolyDenoiseStudio(ctk.CTk):
             self.preview_canvas.delete("all")
             self.canvas_img_id = self.preview_canvas.create_image(0, 0, anchor="nw", image=active_img)
             self._last_canvas_dims = (new_w, new_h)
-        self._update_scrollbars_and_position(new_w, new_h)
+        self._update_scrollbars_and_position(new_w, new_h, anchor=anchor)
 
     @staticmethod
     def write_pfm(rgb: np.ndarray, pfm_path: Path):
@@ -2712,10 +2385,7 @@ class PolyDenoiseStudio(ctk.CTk):
             if out_alpha is not None:
                 out_alpha = DownscaleEngine.downscale_aux_pass(np.dstack([out_alpha] * 3), tw, th, "alpha", ds_kernel)[:, :, 0]
 
-        self.write_exr_static(
-            out_path, denoised_rgb, out_alpha, comp_attr_name, level_str,
-            use_half_exr, worker_threads=exr_worker_threads, is_data_pass=False
-        )
+        self.write_exr_static(out_path, denoised_rgb, out_alpha, comp_attr_name, level_str, use_half_exr, worker_threads=exr_worker_threads, is_data_pass=False)
         t_save_elapsed = time.perf_counter() - t_save_start
         red_1px = self.estimate_noise_fast_roi(orig_rgb, denoised_rgb)
         size_kb = out_path.stat().st_size / 1024.0
@@ -2842,15 +2512,11 @@ class PolyDenoiseStudio(ctk.CTk):
                             if stride > 1:
                                 packed_hdr, _, _ = self.stride_pack(work_rgb, stride)
                                 self.native_oidn.upload_aux_to_vram(packed_alb_ram if has_alb else None, packed_nrm_ram if has_nrm else None, use_half_oidn)
-                                den_packed = self.native_oidn.denoise_in_vram(
-                                    packed_hdr, has_alb, has_nrm, filter_str, quality_str, use_half_oidn, not use_ldr, clean_aux, inplace, maxmem_mb
-                                )
+                                den_packed = self.native_oidn.denoise_in_vram(packed_hdr, has_alb, has_nrm, filter_str, quality_str, use_half_oidn, not use_ldr, clean_aux, inplace, maxmem_mb)
                                 work_rgb = self.stride_unpack(den_packed, work_rgb, stride)
                                 self.native_oidn.upload_aux_to_vram(alb_rgb_ram if has_alb else None, nrm_rgb_ram if has_nrm else None, use_half_oidn)
 
-                            denoised_rgb = self.native_oidn.denoise_in_vram(
-                                work_rgb, has_alb, has_nrm, filter_str, quality_str, use_half_oidn, not use_ldr, clean_aux, inplace, maxmem_mb
-                            )
+                            denoised_rgb = self.native_oidn.denoise_in_vram(work_rgb, has_alb, has_nrm, filter_str, quality_str, use_half_oidn, not use_ldr, clean_aux, inplace, maxmem_mb)
                             if use_ldr:
                                 denoised_rgb = denoised_rgb * ldr_scale
                             t_denoise_elapsed = time.perf_counter() - t_denoise_start
@@ -2875,11 +2541,7 @@ class PolyDenoiseStudio(ctk.CTk):
                             denoised_rgb = self.read_pfm(tmp_out) * (ldr_scale if use_ldr else 1.0)
                             t_denoise_elapsed = time.perf_counter() - t_denoise_start
 
-                        args_tup = (
-                            idx, total, out_path, orig_rgb, denoised_rgb, alpha_ch,
-                            ds_kernel, sc_mode, sc_val, comp_attr_name, level_str,
-                            use_half_exr, t_denoise_elapsed, exr_worker_threads
-                        )
+                        args_tup = (idx, total, out_path, orig_rgb, denoised_rgb, alpha_ch, ds_kernel, sc_mode, sc_val, comp_attr_name, level_str, use_half_exr, t_denoise_elapsed, exr_worker_threads)
                         if executor is not None:
                             save_futures.append(executor.submit(self._save_pass_worker, *args_tup))
                         else:
@@ -2905,10 +2567,7 @@ class PolyDenoiseStudio(ctk.CTk):
                             t_aux_start = time.perf_counter()
                             is_id_map = p_type in ("material_id", "object_id")
                             a_rgb, a_alpha, _ = self.read_exr_native(aux_path, preserve_uint32=is_id_map)
-                            if a_rgb.dtype != np.uint32:
-                                a_clean = np.nan_to_num(a_rgb, nan=0.0, posinf=65500.0, neginf=-65500.0)
-                            else:
-                                a_clean = a_rgb
+                            a_clean = np.nan_to_num(a_rgb, nan=0.0, posinf=65500.0, neginf=-65500.0) if a_rgb.dtype != np.uint32 else a_rgb
                             ah, aw, _ = a_clean.shape
                             tw, th = DownscaleEngine.compute_target_size(aw, ah, sc_mode, sc_val)
                             if (tw, th) == (aw, ah):
@@ -2916,13 +2575,9 @@ class PolyDenoiseStudio(ctk.CTk):
                             a_down = DownscaleEngine.downscale_aux_pass(a_clean, tw, th, p_type, ds_kernel)
                             a_al_down = DownscaleEngine.downscale_aux_pass(np.dstack([a_alpha] * 3), tw, th, "alpha", ds_kernel)[:, :, 0] if a_alpha is not None else None
                             use_half_this_aux = False if p_type in ("depth", "position") else use_half_exr
-                            is_non_color_data = p_type != "albedo"
                             suffix = "_50pct.exr" if (tw == aw // 2 and th == ah // 2) else "_scaled.exr"
                             out_aux = aux_path.parent / f"{aux_path.stem}{suffix}"
-                            self.write_exr_static(
-                                out_aux, a_down, a_al_down, aux_comp_attr, aux_comp_lvl,
-                                use_half_this_aux, worker_threads=CPU_THREADS, is_data_pass=is_non_color_data
-                            )
+                            self.write_exr_static(out_aux, a_down, a_al_down, aux_comp_attr, aux_comp_lvl, use_half_this_aux, worker_threads=CPU_THREADS, is_data_pass=(p_type != "albedo"))
                             self.log(f" -> Aux [{p_type}] {tw}×{th} ({out_aux.stat().st_size / 1024.0:.1f} KB | {time.perf_counter() - t_aux_start:.1f}s): {out_aux.name}")
                         except Exception as ex:
                             self.log(f"Aux scale warning ({aux_path.name}): {ex}")
