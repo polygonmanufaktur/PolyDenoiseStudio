@@ -46,14 +46,24 @@
 Instead of using in-renderer supersampling filters that correlate noise across $2\times 2$ or $3\times 3$ pixels (which blinds OIDN's $1\times 1$-trained neural kernels), **PolyDenoise Studio** enables the **200% Supersampling Workflow**:
 Render at double resolution with uncorrelated $1\text{px}$ box-filtered noise $\rightarrow$ denoise at full resolution in VRAM $\rightarrow$ downscale to your exact target size (`Scale %`, `Target Width px`, or `Target Height px` with automatic even-pixel rounding).
 
-### Selectable C++ AVX2 SIMD & Polyphase Downscale Kernels
-* **Magic Kernel Sharp 2013 (Crisp / HDR-Safe — *Default*):** John Costella's quadratic B-spline decimation kernel (zero negative lobes, zero Moiré) paired with a matched 3-tap deconvolution sharpener and **Karis HDR Luma Weighting** ($w = \frac{1}{1 + Y}$) to prevent dark ringing halos around extreme specular highlights.
-* **MKS 2013 Unclamped (Pure Linear):** Unclamped linear deconvolution for scenes without raw visible emitters where maximum micro-texture bite is desired.
-* **Lanczos-4 Unclamped (16-Tap Sinc):** Surgical high-frequency acuity for fine architectural textures.
-* **Catmull-Rom Bicubic ($B=0, C=0.5$):** The classic sharp ArchViz downsampling filter.
-* **Magic Kernel Sharp 2021 (Balanced SOTA):** 6-tap B-spline + 7-tap deconvolution for ultra-clean anti-aliasing.
-* **Lanczos-3 + Local Anti-Ringing:** 12-tap Sinc kernel with strict $2\times 2$ neighborhood min/max clamping.
-* **Mitchell-Netravali ($B=\frac{1}{3}, C=\frac{1}{3}$):** Smooth VFX production standard.
+### Selectable GPU GLSL & CPU Fallback Filter Families (17 Kernels in v1.5.1)
+Filters are grouped across 6 mathematical families with **`[1] Edge-MKS 2021 • Strict Halo`** as the default and **`[Ctrl+7] Mitchell • Smooth VFX`** last, including dynamic hover explanations, hotkeys (`1`–`0`, `Ctrl+1`–`7`), and **Hold `M`** Edge-Protection X-Ray Heatmap inspection:
+* **MKS Family (`[1]`–`[5]`):** `Edge-MKS 2021 • Strict Halo` *(Default, luma + Normal + Depth Laplacian guard)*, `Edge-MKS 2021 • Balanced`, `Edge-MKS 2021 • G-Buffer`, `MKS 2021 + AMD CAS`, and `MKS 2021 • Reversible HDR`.
+* **Perceptual Color-Space Family (`[6]`–`[7]`):**
+  * **`[6] ICtCp HDR • Perceptual MKS 2021`:** Decimates and sharpens strictly intensity ($I$) in BT.2100 ST-2084 PQ `ICtCp` (with $C^1$ continuous HDR log extension $>100.0$), eliminating hue shift and fringes on saturated HDR emitters.
+  * **`[7] Oklab • Perceptual MKS 2021`:** Decimates and sharpens perceptual Lightness ($L$) in `Oklab` while preserving opponent chromaticity $(a, b)$.
+* **AOV / Guided Family (`[8]`–`[9]`):**
+  * **`[8] Guided Downscale • He et al.`:** Multi-channel local `LDL^T` Cholesky linear regression over **`[Albedo RGB | Normals*0.5 | Log-Depth]`** (with tonemapped-beauty fallback), preserving crisp geometric silhouettes without ringing.
+  * **`[9] AOV-DPID • Detail-Preserving`:** Unbiased Karis-weighted Tent/Area integration (`Guide λ = 0` baseline) with optional Normal + Depth-protected Pass 2 Boost (`> +0%`).
+* **EWA 2D Isotropic Family (`[0]`–`[Ctrl+2]`):** `EWA LanczosSharp • 2D Jinc`, `EWA RobidouxSharp • 2D Keys` ($B = 6/(13+7\sqrt{2}), C = (1-B)/2$), and `EWA Mitchell • 2D Smooth`.
+* **Sinc / Windowed-Sinc Family (`[Ctrl+3]`–`[Ctrl+5]`):** `Lanczos-3 • Strict AR`, `Kaiser-Bessel-3 • HDR-AR`, and `Ginseng-3 • Soft-AR`.
+* **Cubic Family (`[Ctrl+6]`–`[Ctrl+7]`):** `Catmull-Rom • Bicubic` and `Mitchell • Smooth VFX`.
+* **Z-Depth Silhouette Protection (`Depth Guide`):** Second-difference Z-Depth Laplacian protects sharp geometry boundaries from sharpening overshoot across MKS/Boost passes and feeds Guided Downscale.
+
+### ROI Preview, Studio Inspectors & Multi-Layer EXR Export
+* **ROI Crop Preview (`ROI Crop Preview` checkbox + Right-Drag / `Shift+Left-Drag`):** Test downscale kernels and OIDN `⚡ Preview` instantaneously on any rectangular region of interest (Batch export always processes full resolution).
+* **Viewport Inspector Modes & Cursor Pixel Probe:** Switch between `Off (Standard View)`, `False-Color (EV / IRE)`, `Clipping & Fireflies (>1.0)`, and `NaN / Inf / Neg / Albedo=0` (highlighting raw pre-sanitization `NaN`/`Inf`/negative defects) with live linear pixel readout under the cursor.
+* **Multi-Layer EXR Export (`Multi-Layer EXR Export` checkbox):** Packages `R/G/B` composite Beauty sum, `A`, `depth.Z`, `<light>.R/G/B`, and normalized aux passes into `<frame>_multilayer.exr` for Nuke / Fusion / Resolve.
 
 ### Pass-Type Aware Auxiliary & Mask Scaling
 Standard sharpening filters destroy data passes by blending discrete IDs or introducing negative overshoots into masks. **PolyDenoise Studio** automatically routes each non-beauty pass through its mathematically appropriate resampler:
@@ -78,7 +88,7 @@ Built on the latest **OpenEXR v3.5.4** C++ core with balanced multi-threaded **A
 
 * **0ms Hold-Click (or `Spacebar`) A/B Comparison:** Press and hold the Left Mouse Button anywhere on the image to toggle between the denoised pass and the raw input pass (automatically filtered with the identical downscale kernel and target resolution for a true 1:1 pixel comparison).
 * **`[⚡ Sum All Lights (Beauty)]` Virtual Channel:** Dynamically sums all active light passes of the current frame in linear space so you can inspect the full relight composite before exporting.
-* **60fps Real-Time Exposure (`EV`) Slider:** Driven by a precomputed 12-bit sRGB lookup table (`<2ms` latency directly on cached RAM float arrays) combined with **Interleaved Gradient Noise (IGN) TPDF Dithering** to eliminate 8-bit Mach-banding in smooth gradients.
+* **60fps Real-Time Exposure (`EV`), `Boost` & `Radius` Sliders:** Driven by a **GPU GLSL ACES + IGN Dither shader** (`~4 ms @ 2K`, plus cached FP16-LUT CPU fallback) with coalesced slider event updates and zero redundant uploads.
 * **Searchable & Scrollable Selectors:** Instant search filtering and `◀` / `▶` step buttons for animations with 1,000+ frames.
 
 ## 🛠️ Quick Start (Python + Bundled OIDN DLLs)
@@ -91,7 +101,12 @@ Simply double-click **`start.bat`**. On first launch, it automatically installs 
 ### 2. Or Run Manually via Terminal (Python 3.10 – 3.14)
 ```bash
 pip install -r requirements.txt
-python polydenoise_studio.py
+python -m polydenoise      # or: python polydenoise_studio.py
+```
+
+### 3. Run Automated Verification Tests
+```bash
+python -m unittest discover -s tests -v
 ```
 
 ## 📄 Credits & License
